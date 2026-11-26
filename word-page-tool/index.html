@@ -1,0 +1,1794 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<!--
+  ความปลอดภัย: Content-Security-Policy ด้านล่างสั่งให้เบราว์เซอร์ "ห้าม" หน้านี้เชื่อมต่อเครือข่ายทุกชนิด
+  (connect-src 'none', img-src เฉพาะ data:/blob:, ไม่โหลดสคริปต์/ฟอนต์/สไตล์จากภายนอก, ห้ามส่งฟอร์ม)
+  ข้อมูลในไฟล์ Word จึงไม่สามารถถูกส่งออกไปนอกเครื่องได้ แม้เครื่องจะต่ออินเทอร์เน็ตอยู่ก็ตาม
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ตัวช่วยจัดหน้า Word</title>
+<style>
+:root{
+  --bg:#f4f5f7; --panel:#ffffff; --ink:#1f2328; --muted:#5b6470; --line:#d9dde3; --soft:#eef0f3;
+  --wm:#7c3aed; --wm-soft:#f1eafe; --pn:#1d4ed8; --pn-soft:#e6edfd; --or:#c2410c; --or-soft:#fdeee6;
+  --ok:#15803d; --ok-soft:#e7f6ec; --warn:#a16207; --warn-soft:#fdf6dc; --bad:#b91c1c; --bad-soft:#fdecec;
+  --accent:#0f766e; --radius:10px;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.55 "Sarabun","Leelawadee UI","Noto Sans Thai","Tahoma",system-ui,sans-serif}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+[hidden]{display:none!important}
+.top{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+.brand{font-size:19px;font-weight:700}
+.brand small{display:block;font-size:13px;font-weight:400;color:var(--muted)}
+.safe{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:13px;font-weight:600;background:var(--ok-soft);color:var(--ok);border:1px solid #bfe5cb}
+.badge.net{background:var(--soft);color:var(--muted);border-color:var(--line);font-weight:500}
+main{padding:16px 20px 40px;max-width:1600px;margin:0 auto}
+
+/* start screen */
+.start{max-width:860px;margin:24px auto;display:grid;gap:16px}
+.drop{border:2px dashed #9aa4b2;border-radius:16px;background:var(--panel);padding:44px 20px;text-align:center;transition:.15s}
+.drop.over{border-color:var(--accent);background:#eefaf8}
+.drop h2{margin:6px 0 4px;font-size:21px}
+.drop p{margin:4px 0;color:var(--muted)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:7px 14px;font-weight:600}
+.btn:hover{background:var(--soft)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.big{padding:12px 22px;font-size:17px}
+.btn.small{padding:3px 9px;font-size:13px;font-weight:500}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+.card h3{margin:0 0 8px;font-size:16px}
+.card ul{margin:0;padding-left:20px}
+.card li{margin:3px 0}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+.step{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px}
+.step b{display:block;margin-bottom:2px}
+.step span{color:var(--muted);font-size:14px}
+
+/* work screen */
+.filebar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-bottom:10px}
+.filebar .fname{font-weight:700;font-size:17px;word-break:break-all}
+.filebar .meta{color:var(--muted);font-size:14px}
+.filebar .sp{flex:1}
+.notices{display:grid;gap:6px;margin-bottom:12px}
+.notice{border-radius:8px;padding:8px 12px;font-size:14px;border:1px solid}
+.notice.info{background:var(--soft);border-color:var(--line)}
+.notice.warn{background:var(--warn-soft);border-color:#f0dc9a;color:#5c4206}
+.notice.bad{background:var(--bad-soft);border-color:#f3c0c0;color:#7f1d1d}
+.notice.ok{background:var(--ok-soft);border-color:#bfe5cb;color:#14532d}
+.notice b{font-weight:700}
+.layout{display:grid;grid-template-columns:370px minmax(0,1fr) 300px;gap:14px;align-items:start}
+@media (max-width:1250px){.layout{grid-template-columns:350px minmax(0,1fr)}.thumbcol{grid-column:1/-1}}
+@media (max-width:820px){.layout{grid-template-columns:1fr}main{padding:12px}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;position:sticky;top:10px}
+@media (max-width:820px){.panel{position:static}}
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--line)}
+.tab{border:0;background:var(--soft);padding:9px 4px;font-size:13.5px;font-weight:600;color:var(--muted);border-bottom:3px solid transparent}
+.tab .n{display:block;font-size:12px;font-weight:500}
+.tab.active{background:var(--panel);color:var(--ink)}
+.tab[data-tab=wm].active{border-bottom-color:var(--wm)}
+.tab[data-tab=pn].active{border-bottom-color:var(--pn)}
+.tab[data-tab=or].active{border-bottom-color:var(--or)}
+.tab[data-tab=save].active{border-bottom-color:var(--accent)}
+.tabbody{padding:14px 16px;display:grid;gap:12px;max-height:calc(100vh - 140px);overflow:auto}
+@media (max-width:820px){.tabbody{max-height:none}}
+.field{display:grid;gap:4px}
+.field>label,.lbl{font-weight:600;font-size:14px}
+.hint{font-size:13px;color:var(--muted)}
+.hint.bad{color:var(--bad)}
+.hint.okc{color:var(--ok)}
+input[type=text],input[type=number],select{width:100%;border:1px solid var(--line);border-radius:7px;padding:6px 9px;background:#fff}
+input[type=text]:focus,input[type=number]:focus,select:focus{outline:2px solid #99d5cf;border-color:var(--accent)}
+input[type=color]{width:44px;height:32px;padding:0 2px;border:1px solid var(--line);border-radius:6px;background:#fff}
+input[type=range]{width:100%}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row>.grow{flex:1;min-width:90px}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:2px 10px;font-size:13px}
+.chip:hover{background:var(--soft)}
+.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.toggle{display:flex;gap:8px;align-items:center;font-weight:700;padding:8px 10px;border-radius:8px;background:var(--soft)}
+.toggle input{width:18px;height:18px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;flex-wrap:wrap}
+.seg button{border:0;background:#fff;padding:5px 10px;font-size:13.5px;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--ink);color:#fff}
+.grid3{display:grid;grid-template-columns:repeat(3,38px);gap:4px}
+.grid3 button{height:30px;border:1px solid var(--line);background:#fff;border-radius:5px;font-size:15px;line-height:1}
+.grid3 button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.pnpos{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;max-width:270px}
+.pnpos button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:4px 2px;font-size:13px}
+.pnpos button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.pnpos .mid{grid-column:1/-1;text-align:center;font-size:12px;color:var(--muted);padding:2px;border:1px dashed var(--line);border-radius:6px}
+.pagesel{border:1px solid var(--line);border-radius:9px;padding:10px;display:grid;gap:7px;background:#fbfbfc}
+.pagesel.wm{border-left:4px solid var(--wm)}
+.pagesel.pn{border-left:4px solid var(--pn)}
+.pagesel.or{border-left:4px solid var(--or)}
+.selinfo{font-size:13.5px}
+.selinfo b{font-weight:700}
+.box{border-radius:8px;padding:9px 11px;font-size:13.5px}
+.box.soft{background:var(--soft)}
+.box.warn{background:var(--warn-soft);color:#5c4206}
+.box.ok{background:var(--ok-soft);color:#14532d}
+.box.bad{background:var(--bad-soft);color:#7f1d1d}
+.box ul{margin:4px 0 0;padding-left:18px}
+.orlist{display:grid;gap:3px;font-size:13.5px}
+.check{display:flex;gap:8px;align-items:flex-start;font-size:14px}
+.check input{margin-top:4px}
+.verify{display:grid;gap:4px;font-size:14px}
+.verify .v{display:flex;gap:6px}
+.verify .v.ok::before{content:"✔";color:var(--ok);font-weight:700}
+.verify .v.bad::before{content:"✘";color:var(--bad);font-weight:700}
+.verify .v.warn::before{content:"!";color:var(--warn);font-weight:800;padding:0 3px}
+
+/* viewer */
+.viewer{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px;display:grid;gap:10px;min-width:0}
+.vhead{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.vhead .pg{font-weight:700;font-size:16px}
+.vhead input{width:64px}
+.vchips{display:flex;flex-wrap:wrap;gap:6px}
+.vchip{font-size:13px;border-radius:999px;padding:2px 10px;border:1px solid var(--line);background:var(--soft);color:var(--muted)}
+.vchip.wm{background:var(--wm-soft);border-color:#d8c7fb;color:#4c1d95}
+.vchip.pn{background:var(--pn-soft);border-color:#c3d3fa;color:#1e3a8a}
+.vchip.or{background:var(--or-soft);border-color:#f6c9b1;color:#7c2d12}
+.vchip.warn{background:var(--warn-soft);border-color:#f0dc9a;color:#5c4206}
+.quickrow{display:flex;gap:6px;flex-wrap:wrap}
+.stage{background:#d7dbe1;border-radius:8px;padding:18px;display:flex;justify-content:center;align-items:flex-start;min-height:420px;overflow:auto}
+.vnote{font-size:12.5px;color:var(--muted)}
+
+/* page rendering */
+.page{position:relative;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25),0 4px 14px rgba(0,0,0,.08);overflow:hidden;flex:none}
+.page .marg{position:absolute;outline:1px dashed rgba(15,118,110,.28)}
+.page .txt{position:absolute;overflow:hidden;color:#2b2f36;word-break:break-word;white-space:pre-wrap}
+.page .txt .l{min-height:1em}
+.page .txt .img{display:inline-block;background:#e2e5ea;color:#6b7280;border-radius:2px;padding:0 .3em}
+.page .wmk{position:absolute;display:flex;align-items:center;justify-content:center;white-space:nowrap;pointer-events:none;transform-origin:50% 50%}
+.page .pnum{position:absolute;white-space:pre;pointer-events:none;outline:1px dashed rgba(29,78,216,.45);background:rgba(29,78,216,.05)}
+.page .flag{position:absolute;top:4px;right:4px;font-size:11px;background:var(--or);color:#fff;border-radius:4px;padding:0 5px}
+
+/* thumbnails */
+.thumbcol{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:10px;position:sticky;top:10px}
+@media (max-width:1250px){.thumbcol{position:static}}
+.thumbcol h3{margin:0 0 2px;font-size:15px}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:10px;max-height:calc(100vh - 120px);overflow:auto;padding:4px 2px 4px 0}
+@media (max-width:1250px){.thumbs{max-height:none;grid-template-columns:repeat(auto-fill,minmax(110px,1fr))}}
+.thumb{border:2px solid transparent;border-radius:8px;padding:6px;background:var(--soft);display:grid;gap:4px;justify-items:center;cursor:pointer;position:relative}
+.thumb:hover{border-color:#b8c0cc}
+.thumb.cur{border-color:var(--ink);background:#e4e7ec}
+.thumb .tl{display:flex;white-space:nowrap;gap:4px;align-items:center;width:100%;font-size:12.5px;font-weight:600}
+.thumb .tl input{width:16px;height:16px;margin:0}
+.thumb .tl .sp{flex:1}
+.thumb .bd{display:flex;gap:3px}
+.thumb .bd i{font-style:normal;font-size:10.5px;border-radius:4px;padding:0 4px;color:#fff;font-weight:700}
+.thumb .bd .w{background:var(--wm)} .thumb .bd .p{background:var(--pn)} .thumb .bd .o{background:var(--or)}
+.thumb.selwm{background:var(--wm-soft)} .thumb.selpn{background:var(--pn-soft)} .thumb.selor{background:var(--or-soft)}
+.busy{position:fixed;inset:0;background:rgba(20,24,30,.35);display:flex;align-items:center;justify-content:center;z-index:50}
+.busy div{background:#fff;border-radius:12px;padding:18px 26px;font-weight:700;box-shadow:0 10px 30px rgba(0,0,0,.2)}
+.kbd{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;background:var(--soft);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+details summary{cursor:pointer;font-weight:600}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">ตัวช่วยจัดหน้า Word
+    <small>ใส่ลายน้ำ • ใส่เลขหน้า • เปลี่ยนแนวกระดาษ — เฉพาะหน้าที่เลือก</small>
+  </div>
+  <div class="safe">
+    <span class="badge" title="หน้านี้ถูกล็อกด้วย Content-Security-Policy ไม่ให้เชื่อมต่อเครือข่ายใด ๆ">🔒 ทำงานในเครื่องนี้เท่านั้น — ไม่มีการส่งข้อมูลออก</span>
+    <span class="badge net" id="netBadge"></span>
+  </div>
+</header>
+
+<main>
+<!-- ===================== หน้าเริ่มต้น ===================== -->
+<section id="startView" class="start">
+  <label class="drop" id="drop">
+    <div style="font-size:42px">📄</div>
+    <h2>ลากไฟล์ Word (.docx) มาวางที่นี่</h2>
+    <p>หรือ <span class="btn primary" style="margin:6px 0">คลิกเพื่อเลือกไฟล์</span></p>
+    <p class="hint">ไฟล์ถูกอ่านในหน่วยความจำของเบราว์เซอร์เท่านั้น ไฟล์ต้นฉบับจะไม่ถูกแก้ไข</p>
+    <input type="file" id="fileInput" accept=".docx,.dotx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+  </label>
+  <div class="row" style="justify-content:center"><button class="btn" id="sampleBtn">ลองด้วยไฟล์ตัวอย่าง</button></div>
+  <div class="notices" id="startErr"></div>
+  <div class="steps">
+    <div class="step"><b>1. เปิดไฟล์</b><span>โปรแกรมแสดงทุกหน้าให้เห็นเป็นภาพย่อ</span></div>
+    <div class="step"><b>2. เลือกหน้า</b><span>ติ๊กหน้าที่ต้องการ หรือพิมพ์ เช่น 1-3, 5</span></div>
+    <div class="step"><b>3. ตั้งค่า</b><span>ลายน้ำ / เลขหน้า / แนวกระดาษ พร้อมดูภาพตัวอย่างทันที</span></div>
+    <div class="step"><b>4. บันทึก</b><span>ได้ไฟล์ใหม่ พร้อมผลตรวจว่าข้อความไม่ถูกแก้ไข</span></div>
+  </div>
+  <div class="card">
+    <h3>🛡️ ความปลอดภัยของโปรแกรมนี้</h3>
+    <ul>
+      <li><b>ไม่ส่งข้อมูลออกนอกเครื่อง</b> — หน้าเว็บถูกล็อกด้วย Content-Security-Policy ห้ามเชื่อมต่อเครือข่ายทุกชนิด (ใช้งานโดยไม่ต่ออินเทอร์เน็ตได้ 100%)</li>
+      <li><b>ไม่มีโค้ดจากภายนอก</b> — ทุกอย่างอยู่ในไฟล์นี้ไฟล์เดียว ไม่โหลดไลบรารี/ฟอนต์/รูปจากอินเทอร์เน็ต ตรวจสอบโค้ดได้ทั้งหมด</li>
+      <li><b>ไม่เก็บข้อมูลไว้</b> — ไม่ใช้คุกกี้ ไม่บันทึกลงเครื่อง ปิดแท็บหรือกด “ล้างข้อมูล” แล้วข้อมูลหายทันที</li>
+      <li><b>ตรวจไฟล์ก่อนใช้งาน</b> — แจ้งเตือนมาโคร ลิงก์ภายนอกที่อาจใช้ติดตามผู้เปิดไฟล์ และป้องกันไฟล์อันตราย (zip bomb, XML แปลกปลอม)</li>
+      <li><b>ไม่แก้เนื้อหา</b> — ลายน้ำและเลขหน้าเป็นวัตถุลอยแบบ “ไม่ตัดข้อความ” ข้อความเดิมจึงไม่ขยับ และตรวจซ้ำหลังบันทึกว่าตัวอักษรครบเหมือนต้นฉบับ</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ===================== หน้าทำงาน ===================== -->
+<section id="workView" hidden>
+  <div class="filebar">
+    <span>📄</span><span class="fname" id="fName"></span><span class="meta" id="fMeta"></span>
+    <span class="sp"></span>
+    <button class="btn small" id="changeFileBtn">เปิดไฟล์อื่น</button>
+    <button class="btn small" id="clearBtn" title="ลบข้อมูลไฟล์ออกจากหน่วยความจำ">🧹 ล้างข้อมูล</button>
+  </div>
+  <div class="notices" id="notices"></div>
+
+  <div class="layout">
+    <!-- ===== แผงตั้งค่า ===== -->
+    <aside class="panel">
+      <nav class="tabs" role="tablist">
+        <button class="tab active" data-tab="wm">ลายน้ำ<span class="n" id="tcWm"></span></button>
+        <button class="tab" data-tab="pn">เลขหน้า<span class="n" id="tcPn"></span></button>
+        <button class="tab" data-tab="or">แนวกระดาษ<span class="n" id="tcOr"></span></button>
+        <button class="tab" data-tab="save">บันทึก<span class="n">ไฟล์ใหม่</span></button>
+      </nav>
+
+      <!-- ลายน้ำ -->
+      <div class="tabbody" data-body="wm">
+        <label class="toggle"><input type="checkbox" data-bind="wm.enabled"> ใส่ลายน้ำ</label>
+        <div class="pagesel wm" data-sel="wm"></div>
+        <div class="field">
+          <label for="wmText">ข้อความลายน้ำ</label>
+          <input type="text" id="wmText" maxlength="80" data-bind="wm.text">
+          <div class="chips" id="wmPresets"></div>
+        </div>
+        <div class="field">
+          <label>ฟอนต์</label>
+          <input type="text" list="fontList" maxlength="60" data-bind="wm.font" data-font="wm">
+          <div class="hint" data-fonthint="wm"></div>
+        </div>
+        <div class="field">
+          <span class="lbl">ขนาดตัวอักษร</span>
+          <div class="row">
+            <div class="seg" data-seg="wm.auto"><button data-v="true">อัตโนมัติ (พอดีหน้า)</button><button data-v="false">กำหนดเอง</button></div>
+            <input type="number" min="8" max="400" step="1" style="width:86px" data-bind="wm.size" id="wmSize"> <span class="hint">pt</span>
+          </div>
+        </div>
+        <div class="row">
+          <label class="check"><input type="checkbox" data-bind="wm.bold"> ตัวหนา</label>
+          <label class="check"><input type="checkbox" data-bind="wm.italic"> ตัวเอียง</label>
+        </div>
+        <div class="field">
+          <span class="lbl">สีและความจาง</span>
+          <div class="row"><input type="color" data-bind="wm.color">
+            <div class="grow"><input type="range" min="5" max="100" step="5" data-bind="wm.opacity"></div>
+            <span class="hint" id="wmOpLbl"></span></div>
+        </div>
+        <div class="field">
+          <span class="lbl">มุมเอียง</span>
+          <div class="row">
+            <div class="seg" data-seg="wm.angle"><button data-v="315">↗ ทแยงขึ้น</button><button data-v="0">→ แนวนอน</button><button data-v="45">↘ ทแยงลง</button></div>
+            <input type="number" min="0" max="359" step="1" style="width:70px" data-bind="wm.angle"><span class="hint">องศา</span>
+          </div>
+        </div>
+        <div class="field">
+          <span class="lbl">ตำแหน่ง (ภายในขอบกระดาษ)</span>
+          <div class="grid3" data-grid="wm.pos"></div>
+        </div>
+      </div>
+
+      <!-- เลขหน้า -->
+      <div class="tabbody" data-body="pn" hidden>
+        <label class="toggle"><input type="checkbox" data-bind="pn.enabled"> ใส่เลขหน้า</label>
+        <div class="pagesel pn" data-sel="pn"></div>
+        <div class="field">
+          <label>รูปแบบข้อความ</label>
+          <select id="pnPreset"></select>
+          <input type="text" maxlength="60" data-bind="pn.template" id="pnTemplate">
+          <div class="hint">ใช้ <span class="kbd">{n}</span> แทนเลขหน้า และ <span class="kbd">{total}</span> แทนจำนวนหน้าทั้งหมด</div>
+        </div>
+        <div class="field">
+          <span class="lbl">วิธีนับเลข</span>
+          <label class="check"><input type="radio" name="pnmode" value="field" data-bind="pn.mode"> <span>ใช้ <b>เลขหน้าจริง</b> ของเอกสาร (Word คำนวณให้อัตโนมัติ แม้หน้าเลื่อน)</span></label>
+          <label class="check"><input type="radio" name="pnmode" value="seq" data-bind="pn.mode"> <span><b>นับใหม่</b> เฉพาะหน้าที่เลือก เริ่มที่ <input type="number" min="0" max="9999" style="width:76px;display:inline-block" data-bind="pn.start"></span></label>
+        </div>
+        <div class="field">
+          <span class="lbl">ตัวเลข</span>
+          <div class="seg" data-seg="pn.digits"><button data-v="arabic">1 2 3</button><button data-v="thai">๑ ๒ ๓ (เลขไทย)</button></div>
+        </div>
+        <div class="field">
+          <label>ฟอนต์</label>
+          <input type="text" list="fontList" maxlength="60" data-bind="pn.font" data-font="pn">
+          <div class="hint" data-fonthint="pn"></div>
+        </div>
+        <div class="row">
+          <span class="lbl">ขนาด</span><input type="number" min="6" max="96" style="width:76px" data-bind="pn.size"><span class="hint">pt</span>
+          <label class="check"><input type="checkbox" data-bind="pn.bold"> ตัวหนา</label>
+          <input type="color" data-bind="pn.color" title="สีตัวอักษร">
+        </div>
+        <div class="field">
+          <span class="lbl">ตำแหน่งบนหน้ากระดาษ</span>
+          <div class="pnpos" data-pnpos="pn.pos"></div>
+        </div>
+        <div class="field">
+          <span class="lbl">ระยะห่างจากขอบกระดาษ (บน/ล่าง)</span>
+          <div class="row"><input type="range" min="3" max="40" step="1" class="grow" data-bind="pn.offset"><span class="hint" id="pnOffLbl"></span></div>
+        </div>
+      </div>
+
+      <!-- แนวกระดาษ -->
+      <div class="tabbody" data-body="or" hidden>
+        <div class="box soft">เลือกหน้าที่ต้องการ แล้วกดปุ่มด้านล่างเพื่อกำหนดแนวกระดาษ ภาพย่อจะหมุนให้เห็นทันที</div>
+        <div class="pagesel or" data-sel="or"></div>
+        <div class="row">
+          <button class="btn" id="orPortrait">▯ แนวตั้ง</button>
+          <button class="btn" id="orLandscape">▭ แนวนอน</button>
+          <button class="btn small" id="orReset">คืนค่าเดิม</button>
+        </div>
+        <div class="field"><span class="lbl">หน้าที่จะเปลี่ยน</span><div class="orlist" id="orList"></div></div>
+        <div class="box warn" id="orWarn" hidden></div>
+        <div class="box soft hint">
+          หลักการ: Word กำหนดแนวกระดาษเป็น “ส่วน (Section)” โปรแกรมจะแทรกตัวแบ่งส่วนที่ขอบหน้าพอดี ข้อความในหน้าอื่นไม่ถูกแตะต้อง
+          แต่ข้อความ <b>ในหน้าที่หมุน</b> จะจัดบรรทัดใหม่ตามความกว้างกระดาษ (เป็นเรื่องปกติ) และจำนวนหน้าหลังจากนั้นอาจเปลี่ยน
+        </div>
+      </div>
+
+      <!-- บันทึก -->
+      <div class="tabbody" data-body="save" hidden>
+        <div class="field"><span class="lbl">สรุปสิ่งที่จะเปลี่ยน</span><div class="box soft" id="summary"></div></div>
+        <div class="field">
+          <span class="lbl">ความเป็นส่วนตัว</span>
+          <label class="check"><input type="checkbox" data-bind="meta.strip"> <span>ลบชื่อผู้สร้าง/ผู้แก้ไขล่าสุด/บริษัท ออกจากข้อมูลไฟล์ (Metadata)<br><span class="hint" id="metaHint"></span></span></label>
+        </div>
+        <div class="field">
+          <label for="outName">ชื่อไฟล์ใหม่</label>
+          <input type="text" id="outName" maxlength="120">
+        </div>
+        <button class="btn primary big" id="buildBtn">💾 สร้างไฟล์ใหม่และดาวน์โหลด</button>
+        <div class="hint">ไฟล์ต้นฉบับจะไม่ถูกแก้ไข โปรแกรมสร้างไฟล์ใหม่แยกต่างหาก</div>
+        <div id="result"></div>
+      </div>
+    </aside>
+
+    <!-- ===== ภาพตัวอย่าง ===== -->
+    <section class="viewer">
+      <div class="vhead">
+        <button class="btn small" id="prevBtn" title="หน้าก่อน">◀</button>
+        <span class="pg">หน้า</span><input type="number" id="curInput" min="1"><span class="pg" id="curTotal"></span>
+        <button class="btn small" id="nextBtn" title="หน้าถัดไป">▶</button>
+        <span style="flex:1"></span>
+        <div class="quickrow" id="quickRow"></div>
+      </div>
+      <div class="vchips" id="vchips"></div>
+      <div class="stage" id="stage"></div>
+      <div class="vnote">ภาพจำลองโดยประมาณ: แสดงข้อความของหน้านี้ ตำแหน่งลายน้ำและเลขหน้า (กรอบเส้นประ = ขอบเขตข้อความของหน้า) การตัดบรรทัดจริงใน Word อาจต่างเล็กน้อย</div>
+    </section>
+
+    <!-- ===== ภาพย่อทุกหน้า ===== -->
+    <section class="thumbcol">
+      <h3>ทุกหน้า</h3>
+      <div class="hint" id="thumbHint" style="margin-bottom:6px"></div>
+      <div class="thumbs" id="thumbs"></div>
+    </section>
+  </div>
+</section>
+</main>
+<datalist id="fontList"></datalist>
+<div class="busy" id="busy" hidden><div id="busyText">กำลังทำงาน…</div></div>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   ค่าคงที่และเครื่องมือพื้นฐาน
+   ===================================================================== */
+const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const NS_V = 'urn:schemas-microsoft-com:vml';
+const NS_O = 'urn:schemas-microsoft-com:office:office';
+const NS_W10 = 'urn:schemas-microsoft-com:office:word';
+const NS_XMLNS = 'http://www.w3.org/2000/xmlns/';
+const ID_PREFIX = 'wpt_';          // ทุกวัตถุที่โปรแกรมเพิ่มจะมี id ขึ้นต้นด้วยคำนี้
+
+const LIMITS = {
+  maxFile: 150 * 1024 * 1024,           // ขนาดไฟล์สูงสุด
+  maxEntries: 20000,                    // จำนวนไฟล์ย่อยใน zip
+  maxEntryUncompressed: 400 * 1024 * 1024,
+  maxTotalUncompressed: 1500 * 1024 * 1024,
+  maxRatio: 400                         // อัตราบีบอัดผิดปกติ (กัน zip bomb)
+};
+
+class UserError extends Error {}
+const uerr = (m) => new UserError(m);
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const utf8 = new TextDecoder('utf-8');
+const enc = new TextEncoder();
+
+/** สร้าง DOM อย่างปลอดภัย (ใช้ textContent เสมอ ไม่ใช้ innerHTML กับข้อมูลจากไฟล์) */
+function h(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === 'class') e.className = v;
+    else if (k === 'style' && typeof v === 'object') Object.assign(e.style, v);
+    else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
+    else if (k === 'text') e.textContent = v;
+    else e.setAttribute(k, v === true ? '' : String(v));
+  }
+  for (const c of children.flat()) {
+    if (c == null || c === false) continue;
+    e.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  return e;
+}
+
+function escXml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
+}
+/** ตัดอักขระควบคุมที่ XML ไม่รองรับออก */
+function cleanText(s, max) {
+  return String(s ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g, '').slice(0, max);
+}
+/** ชื่อฟอนต์: อนุญาตเฉพาะตัวอักษร ตัวเลข ช่องว่าง และ - _ . ( ) */
+function cleanFont(s) {
+  const f = String(s ?? '').replace(/[^\p{L}\p{N}\p{M} \-_.()]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 60);
+  return f || 'TH Sarabun New';
+}
+function cleanColor(c, def) { return /^#[0-9a-fA-F]{6}$/.test(c || '') ? c.toUpperCase() : def; }
+const THAI_DIGITS = '๐๑๒๓๔๕๖๗๘๙';
+const toThaiDigits = (s) => String(s).replace(/[0-9]/g, (d) => THAI_DIGITS[+d]);
+
+function fmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+/** แปลงชุดหน้า (index เริ่ม 0) เป็นข้อความ เช่น "1-3, 5" */
+function fmtPages(set) {
+  const a = [...set].sort((x, y) => x - y);
+  const out = [];
+  for (let i = 0; i < a.length; i++) {
+    let j = i;
+    while (j + 1 < a.length && a[j + 1] === a[j] + 1) j++;
+    out.push(j > i ? `${a[i] + 1}-${a[j] + 1}` : `${a[i] + 1}`);
+    i = j;
+  }
+  return out.join(', ');
+}
+/** อ่านข้อความเลือกหน้า เช่น "1-3, 5 8" */
+function parsePages(str, n) {
+  const set = new Set(); const bad = [];
+  const s = String(str).replace(/[๐-๙]/g, (d) => THAI_DIGITS.indexOf(d)).replace(/[–—]/g, '-');
+  for (const tok of s.split(/[,\s;]+/).filter(Boolean)) {
+    const m = /^(\d+)(?:-(\d+))?$/.exec(tok);
+    if (!m) { bad.push(tok); continue; }
+    let a = +m[1], b = m[2] ? +m[2] : a;
+    if (a > b) [a, b] = [b, a];
+    if (a < 1 || b > n) { bad.push(tok); continue; }
+    for (let i = a; i <= b; i++) set.add(i - 1);
+  }
+  return { set, bad };
+}
+
+/* =====================================================================
+   ZIP (อ่าน/เขียนเอง ไม่ใช้ไลบรารีภายนอก)
+   ===================================================================== */
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(u8) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+function readZip(buf) {
+  const u8 = new Uint8Array(buf), dv = new DataView(buf);
+  if (u8.length >= 4 && u8[0] === 0xD0 && u8[1] === 0xCF && u8[2] === 0x11 && u8[3] === 0xE0)
+    throw uerr('ไฟล์นี้เป็น Word รุ่นเก่า (.doc) หรือถูกตั้งรหัสผ่านไว้ — กรุณาเปิดใน Word แล้ว “บันทึกเป็น .docx” (และเอารหัสผ่านออกชั่วคราว) ก่อนใช้งาน');
+  if (u8.length < 22 || u8[0] !== 0x50 || u8[1] !== 0x4B)
+    throw uerr('ไฟล์นี้ไม่ใช่ไฟล์ .docx ที่ถูกต้อง');
+  let eocd = -1;
+  for (let i = u8.length - 22; i >= Math.max(0, u8.length - 22 - 65535); i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw uerr('ไฟล์เสียหาย (ไม่พบโครงสร้าง ZIP)');
+  const count = dv.getUint16(eocd + 10, true);
+  const cdSize = dv.getUint32(eocd + 12, true);
+  const cdOff = dv.getUint32(eocd + 16, true);
+  if (count === 0xFFFF || cdOff === 0xFFFFFFFF) throw uerr('ไฟล์ใหญ่เกินกว่าที่รองรับ (ZIP64)');
+  if (count > LIMITS.maxEntries) throw uerr('ไฟล์มีองค์ประกอบมากผิดปกติ จึงไม่เปิดเพื่อความปลอดภัย');
+  if (cdOff + cdSize > eocd) throw uerr('ไฟล์เสียหาย (สารบัญ ZIP ไม่ถูกต้อง)');
+  const entries = []; const names = new Set(); let p = cdOff; let total = 0;
+  for (let i = 0; i < count; i++) {
+    if (p + 46 > u8.length || dv.getUint32(p, true) !== 0x02014b50) throw uerr('ไฟล์เสียหาย (รายการ ZIP ไม่ถูกต้อง)');
+    const flags = dv.getUint16(p + 8, true), method = dv.getUint16(p + 10, true);
+    const time = dv.getUint16(p + 12, true), date = dv.getUint16(p + 14, true);
+    const crc = dv.getUint32(p + 16, true), csize = dv.getUint32(p + 20, true), usize = dv.getUint32(p + 24, true);
+    const nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
+    const lho = dv.getUint32(p + 42, true);
+    const nameBytes = u8.slice(p + 46, p + 46 + nlen);
+    const name = utf8.decode(nameBytes);
+    if (flags & 1) throw uerr('ไฟล์ถูกเข้ารหัส ไม่สามารถเปิดได้');
+    if (method !== 0 && method !== 8) throw uerr('ไฟล์ใช้รูปแบบบีบอัดที่ไม่รองรับ');
+    if (names.has(name)) throw uerr('ไฟล์มีโครงสร้างซ้ำซ้อนผิดปกติ จึงไม่เปิดเพื่อความปลอดภัย');
+    names.add(name);
+    if (lho + 30 > u8.length || dv.getUint32(lho, true) !== 0x04034b50) throw uerr('ไฟล์เสียหาย (ส่วนหัว ZIP ไม่ถูกต้อง)');
+    const dataStart = lho + 30 + dv.getUint16(lho + 26, true) + dv.getUint16(lho + 28, true);
+    if (dataStart + csize > u8.length) throw uerr('ไฟล์เสียหาย (ข้อมูลขาดหาย)');
+    if (usize > LIMITS.maxEntryUncompressed) throw uerr('ไฟล์มีองค์ประกอบใหญ่ผิดปกติ จึงไม่เปิดเพื่อความปลอดภัย');
+    if (usize > 20 * 1024 * 1024 && csize > 0 && usize / csize > LIMITS.maxRatio) throw uerr('ไฟล์มีลักษณะเหมือน “zip bomb” จึงไม่เปิดเพื่อความปลอดภัย');
+    total += usize;
+    if (total > LIMITS.maxTotalUncompressed) throw uerr('ไฟล์ใหญ่เกินไปหลังคลายบีบอัด จึงไม่เปิดเพื่อความปลอดภัย');
+    entries.push({ name, nameBytes, flags, method, time, date, crc, csize, usize, raw: u8.subarray(dataStart, dataStart + csize) });
+    p += 46 + nlen + xlen + clen;
+  }
+  return entries;
+}
+
+async function streamToBytes(stream, limit) {
+  const reader = stream.getReader(); const chunks = []; let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    n += value.length;
+    if (limit != null && n > limit) { try { await reader.cancel(); } catch (e) {} throw uerr('ข้อมูลในไฟล์ไม่ตรงกับที่ระบุไว้ (อาจเป็นไฟล์อันตราย)'); }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(n); let o = 0;
+  for (const c of chunks) { out.set(c, o); o += c.length; }
+  return out;
+}
+async function inflateEntry(e) {
+  let data;
+  if (e.method === 0) data = e.raw.slice();
+  else data = await streamToBytes(new Blob([e.raw]).stream().pipeThrough(new DecompressionStream('deflate-raw')), e.usize);
+  if (data.length !== e.usize || crc32(data) !== e.crc) throw uerr(`ไฟล์เสียหาย (${e.name} ไม่ผ่านการตรวจสอบความถูกต้อง)`);
+  return data;
+}
+async function deflateBytes(u8) {
+  return streamToBytes(new Blob([u8]).stream().pipeThrough(new CompressionStream('deflate-raw')));
+}
+function dosNow() {
+  const d = new Date();
+  return { time: (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), date: ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate() };
+}
+async function makeZipItem(name, bytes, like) {
+  const data = await deflateBytes(bytes);
+  const t = like || dosNow();
+  return { nameBytes: like?.nameBytes || enc.encode(name), flags: (like?.flags ?? 0x800) & ~0x8, method: 8, time: t.time, date: t.date, crc: crc32(bytes), usize: bytes.length, data };
+}
+function writeZip(items) {
+  const parts = [], central = []; let off = 0;
+  for (const it of items) {
+    const nb = it.nameBytes, flags = it.flags & ~0x8 & 0xFFFF;
+    const lh = new Uint8Array(30 + nb.length), lv = new DataView(lh.buffer);
+    lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint16(6, flags, true); lv.setUint16(8, it.method, true);
+    lv.setUint16(10, it.time, true); lv.setUint16(12, it.date, true); lv.setUint32(14, it.crc, true);
+    lv.setUint32(18, it.data.length, true); lv.setUint32(22, it.usize, true); lv.setUint16(26, nb.length, true); lv.setUint16(28, 0, true);
+    lh.set(nb, 30);
+    const ch = new Uint8Array(46 + nb.length), cv = new DataView(ch.buffer);
+    cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true); cv.setUint16(8, flags, true);
+    cv.setUint16(10, it.method, true); cv.setUint16(12, it.time, true); cv.setUint16(14, it.date, true); cv.setUint32(16, it.crc, true);
+    cv.setUint32(20, it.data.length, true); cv.setUint32(24, it.usize, true); cv.setUint16(28, nb.length, true);
+    cv.setUint32(42, off, true); ch.set(nb, 46);
+    parts.push(lh, it.data); central.push(ch);
+    off += lh.length + it.data.length;
+  }
+  const cdSize = central.reduce((a, c) => a + c.length, 0);
+  const e = new Uint8Array(22), ev = new DataView(e.buffer);
+  ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, items.length, true); ev.setUint16(10, items.length, true);
+  ev.setUint32(12, cdSize, true); ev.setUint32(16, off, true);
+  return new Blob([...parts, ...central, e], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+}
+
+/* =====================================================================
+   XML
+   ===================================================================== */
+function parseXml(text, what) {
+  if (/<!DOCTYPE/i.test(text.slice(0, 4096)) || /<!ENTITY/i.test(text)) throw uerr(`ไฟล์มีโครงสร้าง XML ที่ไม่ปลอดภัย (${what}) จึงไม่เปิด`);
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (doc.getElementsByTagName('parsererror').length) throw uerr(`ไฟล์เสียหาย (${what} อ่านไม่ได้)`);
+  return doc;
+}
+function serializeXml(doc) {
+  let s = new XMLSerializer().serializeToString(doc);
+  s = s.replace(/^<\?xml[^>]*\?>\s*/, '');
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n' + s;
+}
+const isW = (e, n) => e && e.namespaceURI === W && (!n || e.localName === n);
+function kid(el, name) { if (!el) return null; for (const c of el.children) if (isW(c, name)) return c; return null; }
+function kids(el, name) { const a = []; if (el) for (const c of el.children) if (isW(c, name)) a.push(c); return a; }
+function wa(el, name) { if (!el) return null; const v = el.getAttributeNS(W, name); return v === '' && !el.hasAttributeNS(W, name) ? null : v; }
+function pfx(doc) { const p = doc.documentElement.lookupPrefix(W); return p ? p + ':' : ''; }
+function setWa(el, name, val) { el.setAttributeNS(W, pfx(el.ownerDocument) + name, String(val)); }
+function rmWa(el, name) { if (el) el.removeAttributeNS(W, name); }
+function onOff(el) { if (!el) return false; const v = wa(el, 'val'); return v == null || !/^(0|false|off)$/i.test(v); }
+function num(v, d) { const n = parseFloat(v); return Number.isFinite(n) ? n : d; }
+
+const ORDER = {
+  pPr: ['pStyle', 'keepNext', 'keepLines', 'pageBreakBefore', 'framePr', 'widowControl', 'numPr', 'suppressLineNumbers', 'pBdr', 'shd', 'tabs', 'suppressAutoHyphens', 'kinsoku', 'wordWrap', 'overflowPunct', 'topLinePunct', 'autoSpaceDE', 'autoSpaceDN', 'bidi', 'adjustRightInd', 'snapToGrid', 'spacing', 'ind', 'contextualSpacing', 'mirrorIndents', 'suppressOverlap', 'jc', 'textDirection', 'textAlignment', 'textboxTightWrap', 'outlineLvl', 'divId', 'cnfStyle', 'rPr', 'sectPr', 'pPrChange'],
+  sectPr: ['headerReference', 'footerReference', 'footnotePr', 'endnotePr', 'type', 'pgSz', 'pgMar', 'paperSrc', 'pgBorders', 'lnNumType', 'pgNumType', 'cols', 'formProt', 'vAlign', 'noEndnote', 'titlePg', 'textDirection', 'bidi', 'rtlGutter', 'docGrid', 'printerSettings', 'sectPrChange'],
+  numPr: ['ilvl', 'numId', 'numberingChange', 'ins']
+};
+/** แทรกลูกตามลำดับที่ schema ของ Word กำหนด (ผิดลำดับ Word จะแจ้งว่าไฟล์เสีย) */
+function insertOrdered(parent, node) {
+  const order = ORDER[parent.localName]; const idx = order ? order.indexOf(node.localName) : -1;
+  let ref = null;
+  if (idx >= 0) for (const c of parent.children) { if (c.namespaceURI === W) { const j = order.indexOf(c.localName); if (j > idx) { ref = c; break; } } }
+  parent.insertBefore(node, ref);
+  return node;
+}
+function ensureChild(parent, name) {
+  return kid(parent, name) || insertOrdered(parent, parent.ownerDocument.createElementNS(W, pfx(parent.ownerDocument) + name));
+}
+function ensurePPr(p) {
+  let pPr = kid(p, 'pPr');
+  if (!pPr) { pPr = p.ownerDocument.createElementNS(W, pfx(p.ownerDocument) + 'pPr'); p.insertBefore(pPr, p.firstChild); }
+  return pPr;
+}
+function fragment(doc, xml) {
+  const wrap = `<x xmlns:w="${W}" xmlns:v="${NS_V}" xmlns:o="${NS_O}" xmlns:w10="${NS_W10}">${xml}</x>`;
+  const f = new DOMParser().parseFromString(wrap, 'application/xml');
+  if (f.getElementsByTagName('parsererror').length) throw new Error('internal fragment error');
+  return Array.from(f.documentElement.children).map((c) => doc.importNode(c, true));
+}
+
+/* =====================================================================
+   วิเคราะห์หน้า: หาว่าแต่ละหน้าเริ่มตรงไหนในไฟล์
+   ใช้ (1) w:lastRenderedPageBreak ที่ Word บันทึกตำแหน่งตัดหน้าไว้ทุกครั้งที่ save
+       (2) ตัวแบ่งหน้า (Page Break) (3) pageBreakBefore (4) ตัวแบ่งส่วน (Section Break)
+   ===================================================================== */
+function* blockChildren(container) {
+  if (!container) return;
+  for (const c of container.children) {
+    if (c.namespaceURI !== W) continue;
+    const n = c.localName;
+    if (n === 'p' || n === 'tbl') yield c;
+    else if (n === 'sdt') yield* blockChildren(kid(c, 'sdtContent'));
+    else if (n === 'customXml') yield* blockChildren(c);
+  }
+}
+function* childrenThrough(el, name) {
+  for (const c of el.children) {
+    if (c.namespaceURI !== W) continue;
+    if (c.localName === name) yield c;
+    else if (c.localName === 'sdt') { const sc = kid(c, 'sdtContent'); if (sc) yield* childrenThrough(sc, name); }
+    else if (c.localName === 'customXml') yield* childrenThrough(c, name);
+  }
+}
+const RUN_WRAPPERS = new Set(['hyperlink', 'ins', 'del', 'moveTo', 'moveFrom', 'smartTag', 'customXml', 'fldSimple', 'dir', 'bdo', 'sdt', 'sdtContent']);
+function* runsOf(el) {
+  for (const c of el.children) {
+    if (c.namespaceURI !== W) continue;
+    if (c.localName === 'r') yield c;
+    else if (RUN_WRAPPERS.has(c.localName)) yield* runsOf(c);
+  }
+}
+
+function sectInfo(s) {
+  const pgSz = kid(s, 'pgSz'), pgMar = kid(s, 'pgMar'), pgNum = kid(s, 'pgNumType');
+  const w = num(wa(pgSz, 'w'), 12240), hh = num(wa(pgSz, 'h'), 15840);
+  const start = wa(pgNum, 'start');
+  return {
+    w, h: hh,
+    orient: (wa(pgSz, 'orient') === 'landscape' || w > hh) ? 'landscape' : 'portrait',
+    mar: {
+      top: Math.abs(num(wa(pgMar, 'top'), 1440)), bottom: Math.abs(num(wa(pgMar, 'bottom'), 1440)),
+      left: num(wa(pgMar, 'left') ?? wa(pgMar, 'start'), 1440), right: num(wa(pgMar, 'right') ?? wa(pgMar, 'end'), 1440),
+      header: num(wa(pgMar, 'header'), 720), footer: num(wa(pgMar, 'footer'), 720)
+    },
+    type: wa(kid(s, 'type'), 'val') || 'nextPage',
+    pgStart: start != null ? parseInt(start, 10) : null
+  };
+}
+
+function collectSections(doc) {
+  const body = kid(doc.documentElement, 'body');
+  const list = [];
+  for (const b of blockChildren(body)) {
+    if (b.localName !== 'p') continue;
+    const s = kid(kid(b, 'pPr'), 'sectPr');
+    if (s) list.push(s);
+  }
+  let fin = kid(body, 'sectPr');
+  if (!fin) {
+    fin = doc.createElementNS(W, pfx(doc) + 'sectPr');
+    const sz = doc.createElementNS(W, pfx(doc) + 'pgSz'); setWa(sz, 'w', 11906); setWa(sz, 'h', 16838); fin.append(sz);
+    body.append(fin);
+  }
+  list.push(fin);
+  return list;
+}
+
+function analyze(doc) {
+  const body = kid(doc.documentElement, 'body');
+  if (!body) throw uerr('ไฟล์ไม่มีเนื้อหาเอกสาร');
+  const sections = collectSections(doc);
+  const st = { pages: [], cur: null, hasContent: false, pending: false, secIdx: 0, lrpb: 0, explicit: 0, multiSecPage: 0 };
+  const MAXLINES = 150;
+
+  function newPage(start) {
+    if (st.cur) flushLine();
+    const pg = { start, sec: st.secIdx, firstPara: null, lines: [], line: '', images: 0, tables: 0, chars: 0 };
+    st.pages.push(pg); st.cur = pg; st.hasContent = false;
+  }
+  function flushLine() {
+    const pg = st.cur;
+    if (pg.lines.length < MAXLINES) pg.lines.push(pg.line.slice(0, 600));
+    pg.line = '';
+  }
+  newPage({ para: null, first: true });
+
+  function handleP(p, row) {
+    const pPr = kid(p, 'pPr');
+    if (st.pending) { newPage({ para: p, bySection: true, inTable: !!row }); st.pending = false; }
+    else if (onOff(kid(pPr, 'pageBreakBefore')) && st.hasContent && !row) newPage({ para: p, inTable: false });
+    const tentative = st.cur.firstPara ? null : st.cur;   // ย่อหน้านี้ "อาจ" เป็นย่อหน้าแรกของหน้าปัจจุบัน
+    if (tentative) tentative.firstPara = p;
+    let paraHas = false;
+    for (const r of runsOf(p)) {
+      for (const c of Array.from(r.children)) {
+        if (c.namespaceURI !== W) { if (c.localName === 'AlternateContent') { st.cur.images++; st.cur.line += '￼'; paraHas = true; st.hasContent = true; } continue; }
+        switch (c.localName) {
+          case 'lastRenderedPageBreak': {
+            st.lrpb++;
+            if (row) { if (row.breakSeen) break; row.breakSeen = true; }
+            if (!st.hasContent) break;
+            if (!paraHas) {
+              // ย่อหน้านี้จริง ๆ แล้วเริ่มที่หน้าถัดไป → ไม่ใช่ย่อหน้าแรกของหน้าเดิม
+              if (tentative && tentative.firstPara === p) tentative.firstPara = null;
+              newPage({ para: p, inTable: !!row }); st.cur.firstPara = p;
+            }
+            else newPage({ para: p, run: r, node: c, mid: true, inTable: !!row });
+            break;
+          }
+          case 'br': {
+            const t = wa(c, 'type');
+            if (t === 'page') { st.explicit++; st.hasContent = true; newPage({ para: p, run: r, node: c, mid: true, explicit: true, inTable: !!row }); paraHas = true; }
+            else if (t !== 'column') { flushLine(); st.hasContent = true; paraHas = true; }
+            break;
+          }
+          case 't': { const tx = c.textContent; if (tx) { st.cur.line += tx; st.cur.chars += tx.length; st.hasContent = true; paraHas = true; } break; }
+          case 'tab': st.cur.line += '\t'; st.hasContent = true; paraHas = true; break;
+          case 'noBreakHyphen': st.cur.line += '-'; st.hasContent = true; paraHas = true; break;
+          case 'sym': st.cur.line += '•'; st.hasContent = true; paraHas = true; break;
+          case 'drawing': case 'pict': case 'object':
+            st.cur.images++; st.cur.line += '￼'; st.hasContent = true; paraHas = true; break;
+        }
+      }
+    }
+    if (row) st.cur.line += '   │   '; else flushLine();
+    st.hasContent = true;
+    const sp = kid(pPr, 'sectPr');
+    if (sp && !row) {
+      st.secIdx++;
+      const next = sections[st.secIdx];
+      const type = next ? (wa(kid(next, 'type'), 'val') || 'nextPage') : 'nextPage';
+      if (type !== 'continuous') st.pending = true; else st.multiSecPage++;
+    }
+  }
+  function handleTbl(tbl, outerRow) {
+    st.cur.tables++;
+    for (const tr of childrenThrough(tbl, 'tr')) {
+      const row = outerRow || { breakSeen: false };
+      for (const tc of childrenThrough(tr, 'tc')) walk(tc, row);
+      if (!outerRow) { st.cur.line = st.cur.line.replace(/\s*│\s*$/, ''); flushLine(); }
+    }
+  }
+  function walk(container, row) {
+    for (const b of blockChildren(container)) {
+      if (b.localName === 'p') handleP(b, row);
+      else handleTbl(b, row);
+    }
+  }
+  walk(body, null);
+  flushLine();
+
+  // เลขหน้าจริง (คำนึงถึงการเริ่มนับใหม่ของแต่ละส่วน)
+  const infos = sections.map(sectInfo);
+  let no = 0;
+  st.pages.forEach((pg, i) => {
+    const si = infos[pg.sec];
+    const secStart = i === 0 || pg.start.bySection;
+    no = (secStart && si.pgStart != null) ? si.pgStart : (i === 0 ? 1 : no + 1);
+    pg.pageNo = no;
+    while (pg.lines.length && pg.lines[pg.lines.length - 1] === '' && pg.lines.length > 1) pg.lines.pop();
+  });
+  return { pages: st.pages, sections, infos, lrpb: st.lrpb, explicit: st.explicit, multiSecPage: st.multiSecPage };
+}
+
+/* =====================================================================
+   ข้อมูลรายการลำดับเลข (ใช้คงระยะเยื้องเมื่อจำเป็นต้องแบ่งย่อหน้า)
+   ===================================================================== */
+function buildNumbering(numDoc) {
+  const abs = new Map(), nums = new Map();
+  if (numDoc) {
+    for (const a of numDoc.documentElement.children) {
+      if (isW(a, 'abstractNum')) {
+        const lv = new Map();
+        for (const l of kids(a, 'lvl')) {
+          const ind = kid(kid(l, 'pPr'), 'ind');
+          if (ind) lv.set(wa(l, 'ilvl') || '0', { left: wa(ind, 'left') ?? wa(ind, 'start') });
+        }
+        abs.set(wa(a, 'abstractNumId'), lv);
+      } else if (isW(a, 'num')) nums.set(wa(a, 'numId'), wa(kid(a, 'abstractNumId'), 'val'));
+    }
+  }
+  return { ind(numId, ilvl) { const lv = abs.get(nums.get(numId)); return lv ? lv.get(ilvl) || null : null; } };
+}
+
+/* =====================================================================
+   โหลดไฟล์
+   ===================================================================== */
+function resolvePath(base, target) {
+  if (target.startsWith('/')) return target.slice(1);
+  const parts = base.split('/'); parts.pop();
+  for (const seg of target.split('/')) { if (seg === '..') parts.pop(); else if (seg && seg !== '.') parts.push(seg); }
+  return parts.join('/');
+}
+function relsPathFor(part) { const i = part.lastIndexOf('/'); return part.slice(0, i + 1) + '_rels/' + part.slice(i + 1) + '.rels'; }
+
+async function loadDocx(buf, fileName) {
+  if (buf.byteLength > LIMITS.maxFile) throw uerr(`ไฟล์ใหญ่เกิน ${fmtBytes(LIMITS.maxFile)}`);
+  const entries = readZip(buf);
+  const byName = new Map(entries.map((e) => [e.name, e]));
+  const text = async (name) => { const e = byName.get(name); return e ? utf8.decode(await inflateEntry(e)) : null; };
+  const ct = await text('[Content_Types].xml');
+  if (!ct) throw uerr('ไฟล์นี้ไม่ใช่เอกสาร Word (.docx)');
+  if (/macroEnabled/i.test(ct)) throw uerr('ไฟล์นี้มีมาโคร (.docm) — ไม่รองรับเพื่อความปลอดภัย กรุณาบันทึกเป็น .docx ปกติก่อน');
+  const rootRels = await text('_rels/.rels');
+  let docPath = 'word/document.xml';
+  if (rootRels) {
+    const rd = parseXml(rootRels, '_rels/.rels');
+    for (const r of rd.documentElement.children) if (/\/officeDocument$/.test(r.getAttribute('Type') || '')) docPath = resolvePath('', r.getAttribute('Target'));
+  }
+  if (!byName.has(docPath)) throw uerr('ไม่พบเนื้อหาเอกสารในไฟล์ (อาจไม่ใช่ไฟล์ Word)');
+  const docXmlText = await text(docPath);
+  const doc = parseXml(docXmlText, 'document.xml');
+  if (!isW(doc.documentElement, 'document')) throw uerr('ไฟล์นี้ไม่ใช่เอกสาร Word ที่รองรับ');
+
+  // ไฟล์ประกอบอื่น ๆ ตามความสัมพันธ์ของเอกสาร
+  const partRels = {};
+  const docRelsText = await text(relsPathFor(docPath));
+  if (docRelsText) {
+    const rd = parseXml(docRelsText, 'document.xml.rels');
+    for (const r of rd.documentElement.children) {
+      const type = (r.getAttribute('Type') || '').split('/').pop();
+      if (r.getAttribute('TargetMode') !== 'External') partRels[type] = resolvePath(docPath, r.getAttribute('Target') || '');
+    }
+  }
+  const numberingText = partRels.numbering ? await text(partRels.numbering) : null;
+  const stylesText = partRels.styles ? await text(partRels.styles) : null;
+  const fontText = partRels.fontTable ? await text(partRels.fontTable) : null;
+
+  const an = analyze(doc);
+
+  // ฟอนต์และขนาดเริ่มต้นของเอกสาร (สำหรับภาพตัวอย่าง)
+  let baseSize = 11, baseFont = null;
+  if (stylesText) {
+    try {
+      const sd = parseXml(stylesText, 'styles.xml');
+      const rDef = kid(kid(kid(sd.documentElement, 'docDefaults'), 'rPrDefault'), 'rPr');
+      const pick = (rPr) => {
+        if (!rPr) return;
+        const sz = wa(kid(rPr, 'szCs'), 'val') || wa(kid(rPr, 'sz'), 'val'); if (sz) baseSize = +sz / 2;
+        const rf = kid(rPr, 'rFonts'); const f = wa(rf, 'cs') || wa(rf, 'ascii'); if (f) baseFont = f;
+      };
+      pick(rDef);
+      for (const s of kids(sd.documentElement, 'style')) if (wa(s, 'type') === 'paragraph' && (wa(s, 'default') === '1' || wa(s, 'styleId') === 'Normal')) pick(kid(s, 'rPr'));
+    } catch (e) { /* ไม่เป็นไร */ }
+  }
+  const fonts = new Set();
+  if (fontText) { try { for (const f of kids(parseXml(fontText, 'fontTable.xml').documentElement, 'font')) { const n = wa(f, 'name'); if (n) fonts.add(n); } } catch (e) {} }
+
+  // จำนวนหน้าที่ Word บันทึกไว้
+  let appPages = null;
+  const appText = await text('docProps/app.xml');
+  if (appText) { const m = /<Pages>(\d+)<\/Pages>/.exec(appText); if (m) appPages = +m[1]; }
+
+  // ตรวจความปลอดภัยของไฟล์
+  const scan = { externalImages: [], links: 0, templates: [], ole: [], other: [], macros: false, activeX: false, embeddings: 0, creator: '', lastBy: '', company: '' };
+  for (const e of entries) {
+    if (/vbaProject\.bin$/i.test(e.name)) scan.macros = true;
+    if (/(^|\/)activeX\//i.test(e.name)) scan.activeX = true;
+    if (/(^|\/)embeddings\//i.test(e.name)) scan.embeddings++;
+    if (/\.rels$/i.test(e.name) && e.usize < 5 * 1024 * 1024) {
+      const t = utf8.decode(await inflateEntry(e));
+      let rd; try { rd = parseXml(t, e.name); } catch (er) { continue; }
+      for (const r of rd.documentElement.children) {
+        if (r.getAttribute('TargetMode') !== 'External') continue;
+        const type = (r.getAttribute('Type') || '').split('/').pop();
+        const target = (r.getAttribute('Target') || '').slice(0, 200);
+        if (type === 'hyperlink') scan.links++;
+        else if (type === 'image') scan.externalImages.push(target);
+        else if (type === 'attachedTemplate') scan.templates.push(target);
+        else if (type === 'oleObject') scan.ole.push(target);
+        else scan.other.push(type + ': ' + target);
+      }
+    }
+  }
+  const core = await text('docProps/core.xml');
+  if (core) {
+    const g = (tag) => { const m = new RegExp(`<${tag}[^>]*>([^<]*)</${tag}>`).exec(core); return m ? m[1].trim() : ''; };
+    scan.creator = g('dc:creator'); scan.lastBy = g('cp:lastModifiedBy');
+  }
+  if (appText) { const m = /<Company>([^<]*)<\/Company>/.exec(appText); if (m) scan.company = m[1].trim(); }
+
+  return {
+    fileName, size: buf.byteLength, entries, docPath, docXmlText, numberingText, appPages, scan,
+    baseSize, baseFont, fonts: [...fonts],
+    lrpb: an.lrpb, explicit: an.explicit, multiSecPage: an.multiSecPage,
+    sections: an.infos,
+    pages: an.pages.map((p) => ({
+      sec: p.sec, pageNo: p.pageNo, lines: p.lines, images: p.images, tables: p.tables, chars: p.chars,
+      mid: !!p.start.mid && !p.start.inTable, inTable: !!p.start.inTable, hasFirstPara: !!p.firstPara,
+      bySection: !!p.start.bySection || !!p.start.first, explicit: !!p.start.explicit
+    }))
+  };
+}
+
+/* =====================================================================
+   การแบ่งย่อหน้า/แทรกตัวแบ่งส่วน (ใช้เฉพาะตอนเปลี่ยนแนวกระดาษ)
+   ===================================================================== */
+function splitRunBefore(run, node) {
+  const nr = run.cloneNode(false);
+  const rPr = kid(run, 'rPr'); if (rPr) nr.append(rPr.cloneNode(true));
+  let n = node;
+  while (n) { const nx = n.nextSibling; nr.append(n); n = nx; }
+  run.after(nr);
+  return nr;
+}
+const hasContentChildren = (run) => Array.from(run.children).some((c) => !isW(c, 'rPr'));
+
+function makeContinuationPPr(pPr, numbering) {
+  const pb = kid(pPr, 'pageBreakBefore'); if (pb) pb.remove();
+  const numPr = kid(pPr, 'numPr');
+  let lvl = null;
+  if (numPr) {
+    const numId = wa(kid(numPr, 'numId'), 'val'), ilvl = wa(kid(numPr, 'ilvl'), 'val') || '0';
+    if (numId && numId !== '0') lvl = numbering.ind(numId, ilvl);
+    while (numPr.firstChild) numPr.firstChild.remove();
+    setWa(ensureChild(numPr, 'numId'), 'val', '0');
+  }
+  const ind = ensureChild(pPr, 'ind');
+  if (!ind.hasAttributeNS(W, 'left') && !ind.hasAttributeNS(W, 'start') && lvl && lvl.left != null) setWa(ind, 'left', lvl.left);
+  for (const a of ['firstLine', 'hanging', 'firstLineChars', 'hangingChars']) setWa(ind, a, '0');
+  const sp = ensureChild(pPr, 'spacing');
+  setWa(sp, 'before', '0'); setWa(sp, 'beforeLines', '0'); setWa(sp, 'beforeAutospacing', '0');
+}
+
+/** แบ่งย่อหน้า p ณ ตำแหน่ง node (ตัวแบ่งหน้า/จุดตัดหน้า) คืนค่าย่อหน้าส่วนหลัง */
+function splitParagraphAt(p, run, node, removeNode, numbering) {
+  let r = run;
+  const before = Array.from(r.children).filter((c) => !isW(c, 'rPr'));
+  if (before[0] !== node) r = splitRunBefore(r, node);
+  let container = r.parentNode, ref = r;
+  if (removeNode) {
+    node.remove();
+    if (!hasContentChildren(r)) { ref = r.nextSibling; r.remove(); }
+  }
+  while (container !== p) {
+    const ln = container.localName;
+    if (ln === 'sdtContent' || ln === 'sdt' || ln === 'fldSimple') {
+      const wrapper = ln === 'sdtContent' ? container.parentNode : container;
+      ref = wrapper; container = wrapper.parentNode; continue;
+    }
+    const contentKids = Array.from(container.childNodes).filter((c) => c.nodeType === 1 && !/Pr$/.test(c.localName));
+    if (ref === null) { ref = container.nextSibling; container = container.parentNode; continue; }
+    if (contentKids[0] === ref) { ref = container; container = container.parentNode; continue; }
+    const clone = container.cloneNode(false);
+    for (const c of container.children) if (/Pr$/.test(c.localName)) clone.append(c.cloneNode(true));
+    let n = ref; while (n) { const nx = n.nextSibling; clone.append(n); n = nx; }
+    container.after(clone);
+    ref = clone; container = clone.parentNode;
+  }
+  const doc = p.ownerDocument;
+  const P2 = p.cloneNode(false);
+  const pPr = kid(p, 'pPr');
+  const origSect = kid(pPr, 'sectPr');
+  let p2pPr = pPr ? pPr.cloneNode(true) : doc.createElementNS(W, pfx(doc) + 'pPr');
+  const cs = kid(p2pPr, 'sectPr'); if (cs) cs.remove();
+  P2.append(p2pPr);
+  let n = ref; while (n) { const nx = n.nextSibling; P2.append(n); n = nx; }
+  p.after(P2);
+  if (origSect) insertOrdered(p2pPr, origSect);   // ย้ายตัวแบ่งส่วนเดิมไปท้ายย่อหน้าส่วนหลัง
+  makeContinuationPPr(p2pPr, numbering);
+  return P2;
+}
+
+function prevBlock(target) {
+  let n = target;
+  for (;;) {
+    let s = n.previousElementSibling;
+    while (s && !(s.namespaceURI === W && ['p', 'tbl', 'sdt', 'customXml'].includes(s.localName))) s = s.previousElementSibling;
+    if (s) {
+      if (s.localName === 'sdt' || s.localName === 'customXml') {
+        const arr = [...blockChildren(s.localName === 'sdt' ? kid(s, 'sdtContent') : s)];
+        if (arr.length) return arr[arr.length - 1];
+        n = s; continue;
+      }
+      return s;
+    }
+    const par = n.parentNode;
+    if (isW(par, 'sdtContent')) { n = par.parentNode; continue; }
+    if (isW(par, 'customXml')) { n = par; continue; }
+    return null;
+  }
+}
+function outermostTable(node) {
+  let t = null, n = node;
+  while (n && !isW(n, 'body')) { if (isW(n, 'tbl')) t = n; n = n.parentNode; }
+  return t;
+}
+function firstParagraphIn(el) {
+  if (isW(el, 'p')) return el;
+  const ps = el.getElementsByTagNameNS(W, 'p');
+  return ps.length ? ps[0] : null;
+}
+function putSectPr(p, sect) {
+  const pPr = ensurePPr(p);
+  const old = kid(pPr, 'sectPr'); if (old) old.remove();
+  insertOrdered(pPr, sect);
+}
+function sectionParagraph(doc, sect) {
+  const [p] = fragment(doc, '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr></w:p>');
+  insertOrdered(kid(p, 'pPr'), sect);
+  return p;
+}
+function fixContinuationSect(S) {
+  const t = kid(S, 'titlePg'); if (t) t.remove();
+  const pn = kid(S, 'pgNumType'); if (pn) rmWa(pn, 'start');
+  setWa(ensureChild(S, 'type'), 'val', 'nextPage');
+}
+function applyOrient(S, want) {
+  const sz = ensureChild(S, 'pgSz');
+  let w = num(wa(sz, 'w'), 12240), hh = num(wa(sz, 'h'), 15840);
+  if (want === 'landscape') { if (w < hh) [w, hh] = [hh, w]; setWa(sz, 'orient', 'landscape'); }
+  else { if (w > hh) [w, hh] = [hh, w]; rmWa(sz, 'orient'); }
+  setWa(sz, 'w', w); setWa(sz, 'h', hh);
+}
+
+function insertSectionBreak(doc, page, S, numbering, report, k) {
+  const st = page.start;
+  const newSect = S.cloneNode(true);
+  const chg = kid(newSect, 'sectPrChange'); if (chg) chg.remove();
+  if (st.mid && !st.inTable) {
+    const P2 = splitParagraphAt(st.para, st.run, st.node, !!st.explicit, numbering);
+    putSectPr(st.para, newSect);
+    if (!st.explicit) report.splits.push(k + 1);
+    return { newSect, firstPara: P2 };
+  }
+  let target = st.para;
+  if (!target) return null;
+  if (st.inTable || outermostTable(target)) {
+    const tbl = outermostTable(target);
+    if (tbl) {
+      if (firstParagraphIn(tbl) !== target) report.tableMoves.push(k + 1);
+      target = tbl;
+    }
+  }
+  const prev = prevBlock(target);
+  if (prev && isW(prev, 'p') && !kid(kid(prev, 'pPr'), 'sectPr')) putSectPr(prev, newSect);
+  else target.parentNode.insertBefore(sectionParagraph(doc, newSect), target);
+  if (isW(target, 'p')) { const pb = kid(kid(target, 'pPr'), 'pageBreakBefore'); if (pb) pb.remove(); }
+  return { newSect, firstPara: firstParagraphIn(target) };
+}
+
+/* =====================================================================
+   สร้างลายน้ำ / เลขหน้า (วัตถุลอยแบบ VML ไม่ตัดข้อความ = ข้อความเดิมไม่ขยับ)
+   ===================================================================== */
+const mctx = document.createElement('canvas').getContext('2d');
+function measureEm(text, font, bold, italic) {
+  mctx.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}100px "${font}", "TH Sarabun New", Tahoma, sans-serif`;
+  return Math.max(0.3, mctx.measureText(text || ' ').width / 100);
+}
+const WM_LH = 1.5; // ความสูงกล่อง WordArt เทียบกับขนาดตัวอักษร (ค่าเดียวกับที่ Word ใช้)
+/** ขนาดลายน้ำ (pt) สำหรับหน้ากระดาษที่มีพื้นที่ข้อความ cw x ch (pt) */
+function wmGeometry(o, cw, ch) {
+  const em = measureEm(o.text, o.font, o.bold, o.italic);
+  const a = (o.angle % 360) * Math.PI / 180, c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a));
+  let size = o.auto
+    ? Math.min(0.92 * cw / (em * c + WM_LH * s), 0.92 * ch / (em * s + WM_LH * c), 220)
+    : o.size;
+  size = clamp(size, 6, 600);
+  return { size, w: em * size, h: WM_LH * size };
+}
+const POS = { t: 'top', c: 'center', b: 'bottom', l: 'left', r: 'right' };
+
+function watermarkXml(id, o, dims) {
+  const g = wmGeometry(o, dims.cw, dims.ch);
+  const v = POS[o.pos[0]], hz = POS[o.pos[1]];
+  const style = `font-family:&quot;${escXml(o.font)}&quot;;font-size:1pt${o.bold ? ';font-weight:bold' : ''}${o.italic ? ';font-style:italic' : ''}`;
+  return `<w:r><w:rPr><w:noProof/></w:rPr><w:pict>` +
+    `<v:shapetype id="${ID_PREFIX}t${id}" coordsize="21600,21600" o:spt="136" adj="10800" path="m@7,l@8,m@5,21600l@6,21600e">` +
+    `<v:formulas><v:f eqn="sum #0 0 10800"/><v:f eqn="prod #0 2 1"/><v:f eqn="sum 21600 0 @1"/><v:f eqn="sum 0 0 @2"/><v:f eqn="sum 21600 0 @3"/><v:f eqn="if @0 @3 0"/><v:f eqn="if @0 21600 @1"/><v:f eqn="if @0 0 @2"/><v:f eqn="if @0 @4 21600"/><v:f eqn="mid @5 @6"/><v:f eqn="mid @8 @5"/><v:f eqn="mid @7 @8"/><v:f eqn="mid @6 @7"/><v:f eqn="sum @6 0 @5"/></v:formulas>` +
+    `<v:path textpathok="t" o:connecttype="custom" o:connectlocs="@9,0;@10,10800;@11,21600;@12,10800" o:connectangles="270,180,90,0"/>` +
+    `<v:textpath on="t" fitshape="t"/><v:handles><v:h position="#0,bottomRight" xrange="6629,14971"/></v:handles><o:lock v:ext="edit" text="t" shapetype="t"/></v:shapetype>` +
+    `<v:shape id="${ID_PREFIX}wm${id}" type="#${ID_PREFIX}t${id}" style="position:absolute;margin-left:0;margin-top:0;width:${g.w.toFixed(2)}pt;height:${g.h.toFixed(2)}pt;rotation:${Math.round(o.angle) % 360};z-index:${-251650000 + id};mso-position-horizontal:${hz};mso-position-horizontal-relative:margin;mso-position-vertical:${v};mso-position-vertical-relative:margin" o:allowincell="f" fillcolor="${o.color}" stroked="f">` +
+    `<v:fill opacity="${(o.opacity / 100).toFixed(2)}"/>` +
+    `<v:textpath style="${style}" string="${escXml(o.text)}"/>` +
+    `<w10:wrap type="none" anchorx="margin" anchory="margin"/>` +
+    `</v:shape></w:pict></w:r>`;
+}
+
+function fmtNum(n, digits) { return digits === 'thai' ? toThaiDigits(n) : String(n); }
+function pageNumberText(o, n, total) {
+  return o.template.replace(/\{n\}/g, fmtNum(n, o.digits)).replace(/\{total\}/g, fmtNum(total, o.digits));
+}
+function pnGeometry(o, dims) {
+  const hgt = o.size * 1.6 + 4;
+  const off = o.offset * 72 / 25.4;
+  const top = o.pos[0] === 't' ? off : dims.ph - off - hgt;
+  return { top, hgt, w: dims.cw };
+}
+function pageNumberXml(id, o, n, total, dims) {
+  const g = pnGeometry(o, dims);
+  const f = escXml(o.font), hs = Math.round(o.size * 2);
+  const rPr = `<w:rPr><w:rFonts w:ascii="${f}" w:hAnsi="${f}" w:eastAsia="${f}" w:cs="${f}"/>${o.bold ? '<w:b/><w:bCs/>' : ''}<w:noProof/><w:color w:val="${o.color.slice(1)}"/><w:sz w:val="${hs}"/><w:szCs w:val="${hs}"/></w:rPr>`;
+  const txt = (s) => s ? `<w:r>${rPr}<w:t xml:space="preserve">${escXml(s)}</w:t></w:r>` : '';
+  const sw = o.digits === 'thai' ? '\\* ThaiArabic' : '\\* Arabic';
+  const field = (code, val) => `<w:r>${rPr}<w:fldChar w:fldCharType="begin"/></w:r><w:r>${rPr}<w:instrText xml:space="preserve"> ${code} ${sw} </w:instrText></w:r><w:r>${rPr}<w:fldChar w:fldCharType="separate"/></w:r>${txt(fmtNum(val, o.digits))}<w:r>${rPr}<w:fldChar w:fldCharType="end"/></w:r>`;
+  let runs = '';
+  for (const part of o.template.split(/(\{n\}|\{total\})/)) {
+    if (part === '{n}') runs += o.mode === 'field' ? field('PAGE', n) : txt(fmtNum(n, o.digits));
+    else if (part === '{total}') runs += o.mode === 'field' ? field('NUMPAGES', total) : txt(fmtNum(total, o.digits));
+    else runs += txt(part);
+  }
+  const jc = { l: 'left', c: 'center', r: 'right' }[o.pos[1]];
+  return `<w:r><w:rPr><w:noProof/></w:rPr><w:pict>` +
+    `<v:shapetype id="${ID_PREFIX}b${id}" coordsize="21600,21600" o:spt="202" path="m,l,21600r21600,l21600,xe"><v:stroke joinstyle="miter"/><v:path gradientshapeok="t" o:connecttype="rect"/></v:shapetype>` +
+    `<v:shape id="${ID_PREFIX}pn${id}" type="#${ID_PREFIX}b${id}" style="position:absolute;margin-left:0;margin-top:${g.top.toFixed(2)}pt;width:${g.w.toFixed(2)}pt;height:${g.hgt.toFixed(2)}pt;z-index:${251660000 + id};mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:absolute;mso-position-vertical-relative:page;mso-wrap-style:square;v-text-anchor:middle" o:allowincell="f" filled="f" stroked="f">` +
+    `<v:textbox inset="0,0,0,0"><w:txbxContent><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="0" w:right="0" w:firstLine="0"/><w:jc w:val="${jc}"/></w:pPr>${runs}</w:p></w:txbxContent></v:textbox>` +
+    `<w10:wrap type="none" anchorx="margin" anchory="page"/>` +
+    `</v:shape></w:pict></w:r>`;
+}
+
+function dimsOf(info) {
+  const pw = info.w / 20, ph = info.h / 20;
+  return { pw, ph, cw: Math.max(36, pw - (info.mar.left + info.mar.right) / 20), ch: Math.max(36, ph - (info.mar.top + info.mar.bottom) / 20), mar: info.mar };
+}
+function orientedInfo(info, want) {
+  const land = info.w > info.h;
+  if ((want === 'landscape') === land) return info;
+  return { ...info, w: info.h, h: info.w, orient: want };
+}
+
+function ensureRootNs(doc) {
+  const root = doc.documentElement;
+  for (const [p, uri] of [['v', NS_V], ['o', NS_O], ['w10', NS_W10]]) {
+    if (root.lookupNamespaceURI(p) == null) root.setAttributeNS(NS_XMLNS, 'xmlns:' + p, uri);
+  }
+}
+
+/** ดึงข้อความทั้งหมดของเอกสาร (ไม่นับวัตถุที่โปรแกรมเพิ่ม) เพื่อตรวจว่าตัวอักษรไม่ถูกแก้ */
+function bodyText(doc) {
+  let s = '';
+  const ts = doc.getElementsByTagNameNS(W, 't');
+  outer: for (let i = 0; i < ts.length; i++) {
+    for (let n = ts[i].parentNode; n; n = n.parentNode) {
+      if (n.nodeType === 1 && n.localName === 'shape' && (n.getAttribute('id') || '').startsWith(ID_PREFIX)) continue outer;
+    }
+    s += ts[i].textContent;
+  }
+  return s;
+}
+
+/* =====================================================================
+   สร้างไฟล์ผลลัพธ์
+   ===================================================================== */
+async function buildOutput(model, opts) {
+  const report = { splits: [], tableMoves: [], fallbackAnchor: [], sectionBreaks: 0, wm: 0, pn: 0, orient: [], failedOrient: [] };
+  const doc = parseXml(model.docXmlText, 'document.xml');
+  const numbering = buildNumbering(model.numberingText ? parseXml(model.numberingText, 'numbering.xml') : null);
+  const an = analyze(doc);
+  if (an.pages.length !== model.pages.length) throw new Error('page map mismatch');
+  const pages = an.pages, n = pages.length;
+  ensureRootNs(doc);
+
+  // ---------- 1) แนวกระดาษ ----------
+  const curO = pages.map((p) => an.infos[p.sec].orient);
+  const want = pages.map((p, i) => opts.orient.get(i) || curO[i]);
+  const gov = pages.map((p) => an.sections[p.sec]);
+  const fixed = new Set();
+  if (want.some((o, i) => o !== curO[i])) {
+    for (let k = 1; k < n; k++) {
+      if (want[k] === want[k - 1] || gov[k] !== gov[k - 1]) continue;
+      const S = gov[k];
+      const res = insertSectionBreak(doc, pages[k], S, numbering, report, k);
+      if (!res) { report.failedOrient.push(k + 1); want[k] = want[k - 1]; continue; }
+      report.sectionBreaks++;
+      for (let j = k - 1; j >= 0 && gov[j] === S; j--) gov[j] = res.newSect;
+      if (!fixed.has(S)) { fixContinuationSect(S); fixed.add(S); }
+      if (res.firstPara) pages[k].firstPara = res.firstPara;
+    }
+    for (let i = 0; i < n; i++) {
+      applyOrient(gov[i], want[i]);
+      if (want[i] !== curO[i]) report.orient.push(i + 1);
+    }
+  }
+
+  // ---------- 2) ลายน้ำ + เลขหน้า ----------
+  const wmOn = opts.wm.enabled && opts.wm.text.trim() && opts.wm.pages.size;
+  const pnOn = opts.pn.enabled && opts.pn.pages.size;
+  const pnList = [...opts.pn.pages].sort((a, b) => a - b);
+  const pnTotalSeq = opts.pn.start + pnList.length - 1;
+  const lastPageNo = pages.length ? pages[pages.length - 1].pageNo : 1;
+  let uid = 0;
+  for (let i = 0; i < n; i++) {
+    const doWm = wmOn && opts.wm.pages.has(i), doPn = pnOn && opts.pn.pages.has(i);
+    if (!doWm && !doPn) continue;
+    const dims = dimsOf(sectInfo(gov[i]));
+    let xml = '';
+    if (doWm) { xml += watermarkXml(++uid, opts.wm, dims); report.wm++; }
+    if (doPn) {
+      const num = opts.pn.mode === 'field' ? pages[i].pageNo : opts.pn.start + pnList.indexOf(i);
+      const total = opts.pn.mode === 'field' ? lastPageNo : pnTotalSeq;
+      xml += pageNumberXml(++uid, opts.pn, num, total, dims); report.pn++;
+    }
+    const nodes = fragment(doc, xml);
+    const pg = pages[i];
+    let p = pg.firstPara;
+    if (p) {
+      const pPr = kid(p, 'pPr');
+      for (const nd of nodes) p.insertBefore(nd, pPr ? pPr.nextSibling : p.firstChild);
+    } else {
+      // หน้านี้ไม่มีย่อหน้าที่ขึ้นต้นในหน้า (ย่อหน้ายาวทั้งหน้า) → ยึดไว้ตรงจุดเริ่มหน้า
+      report.fallbackAnchor.push(i + 1);
+      let r = pg.start.run; const node = pg.start.node;
+      if (r && r.parentNode && node && node.parentNode === r) {
+        const first = Array.from(r.children).find((c) => !isW(c, 'rPr'));
+        if (first !== node) r = splitRunBefore(r, node);          // ให้จุดเริ่มหน้าอยู่ต้น run
+        if (pg.start.explicit) {                                  // ตัวแบ่งหน้า: วางไว้ "หลัง" ตัวแบ่ง
+          if (node.nextSibling) { const r2 = splitRunBefore(r, node.nextSibling); for (const nd of nodes) r2.before(nd); }
+          else { let ref = r; for (const nd of nodes) { ref.after(nd); ref = nd; } }
+        } else for (const nd of nodes) r.before(nd);              // จุดตัดหน้าของ Word: วางไว้ก่อนข้อความแรกของหน้า
+      } else {
+        p = pg.start.para || firstParagraphIn(kid(doc.documentElement, 'body'));
+        const pPr = kid(p, 'pPr');
+        for (const nd of nodes) p.insertBefore(nd, pPr ? pPr.nextSibling : p.firstChild);
+      }
+    }
+  }
+
+  // ---------- 3) ประกอบไฟล์ ----------
+  const newDocXml = serializeXml(doc);
+  const newDocBytes = enc.encode(newDocXml);
+  const replace = new Map([[model.docPath, newDocBytes]]);
+  let metaDone = false;
+  if (opts.meta.strip) {
+    for (const e of model.entries) {
+      if (e.name === 'docProps/core.xml') {
+        let t = utf8.decode(await inflateEntry(e));
+        t = t.replace(/(<dc:creator(?:\s[^>]*)?>)[^<]*(<\/dc:creator>)/, '$1$2')
+             .replace(/(<cp:lastModifiedBy(?:\s[^>]*)?>)[^<]*(<\/cp:lastModifiedBy>)/, '$1$2');
+        replace.set(e.name, enc.encode(t)); metaDone = true;
+      } else if (e.name === 'docProps/app.xml') {
+        let t = utf8.decode(await inflateEntry(e));
+        t = t.replace(/(<Company>)[^<]*(<\/Company>)/, '$1$2').replace(/(<Manager>)[^<]*(<\/Manager>)/, '$1$2');
+        replace.set(e.name, enc.encode(t)); metaDone = true;
+      }
+    }
+  }
+  const items = [];
+  for (const e of model.entries) {
+    if (replace.has(e.name)) items.push(await makeZipItem(e.name, replace.get(e.name), e));
+    else items.push({ nameBytes: e.nameBytes, flags: e.flags, method: e.method, time: e.time, date: e.date, crc: e.crc, usize: e.usize, data: e.raw });
+  }
+  const blob = writeZip(items);
+
+  // ---------- 4) ตรวจสอบผลลัพธ์ ----------
+  const verify = [];
+  const outBuf = await blob.arrayBuffer();
+  let reread = null;
+  try {
+    const outEntries = readZip(outBuf);
+    for (const e of outEntries) if (e.usize < 50 * 1024 * 1024) await inflateEntry(e);
+    reread = outEntries;
+    verify.push(['ok', `โครงสร้างไฟล์ถูกต้อง อ่านกลับได้ครบ ${outEntries.length} ส่วน`]);
+  } catch (e) { verify.push(['bad', 'ไฟล์ผลลัพธ์อ่านกลับไม่ได้: ' + e.message]); }
+  try {
+    const outDoc = reread ? parseXml(utf8.decode(await inflateEntry(reread.find((e) => e.name === model.docPath))), 'document.xml') : null;
+    const before = bodyText(parseXml(model.docXmlText, 'document.xml'));
+    const after = outDoc ? bodyText(outDoc) : null;
+    if (after === before) verify.push(['ok', `ข้อความในเอกสารครบถ้วนเหมือนต้นฉบับทุกตัวอักษร (${before.length.toLocaleString('th-TH')} ตัวอักษร)`]);
+    else verify.push(['bad', 'ข้อความในเอกสารไม่ตรงกับต้นฉบับ — ไม่แนะนำให้ใช้ไฟล์นี้']);
+    const unchanged = model.entries.length - replace.size;
+    verify.push(['ok', `ส่วนอื่นของไฟล์ (รูปภาพ ส่วนหัว/ท้าย สไตล์ ฯลฯ) ${unchanged} ส่วน คัดลอกแบบไบต์ต่อไบต์ ไม่ถูกแตะต้อง`]);
+  } catch (e) { verify.push(['bad', 'ตรวจข้อความไม่สำเร็จ: ' + e.message]); }
+  if (report.wm) verify.push(['ok', `ใส่ลายน้ำ ${report.wm} หน้า (วัตถุลอยหลังข้อความ ไม่ดันข้อความ)`]);
+  if (report.pn) verify.push(['ok', `ใส่เลขหน้า ${report.pn} หน้า (กล่องข้อความลอย ไม่ดันข้อความ)`]);
+  if (report.orient.length) verify.push(['ok', `เปลี่ยนแนวกระดาษ ${report.orient.length} หน้า (เพิ่มตัวแบ่งส่วน ${report.sectionBreaks} จุด)`]);
+  if (report.splits.length) verify.push(['warn', `หน้า ${report.splits.join(', ')} เริ่มกลางย่อหน้า จึงแบ่งย่อหน้านั้นเป็น 2 ส่วนที่ขอบหน้า (ตัวอักษรเหมือนเดิม) บรรทัดสุดท้ายก่อนขึ้นหน้าใหม่อาจไม่เต็มบรรทัดหากจัดชิดขอบสองด้าน`]);
+  if (report.tableMoves.length) verify.push(['warn', `หน้า ${report.tableMoves.join(', ')} เริ่มกลางตาราง — Word ไม่สามารถเปลี่ยนแนวกระดาษกลางตารางได้ ตารางนั้นทั้งตารางจึงย้ายไปอยู่ในแนวใหม่`]);
+  if (report.fallbackAnchor.length) verify.push(['warn', `หน้า ${report.fallbackAnchor.join(', ')} ทั้งหน้าเป็นย่อหน้าเดียวต่อเนื่อง ลายน้ำ/เลขหน้าอาจไปแสดงที่หน้าก่อนหน้า กรุณาตรวจใน Word`]);
+  if (report.failedOrient.length) verify.push(['bad', `ไม่สามารถเปลี่ยนแนวกระดาษที่หน้า ${report.failedOrient.join(', ')}`]);
+  if (metaDone) verify.push(['ok', 'ลบชื่อผู้สร้าง/ผู้แก้ไข/บริษัท ออกจากข้อมูลไฟล์แล้ว']);
+  return { blob, verify, report, ok: !verify.some((v) => v[0] === 'bad') };
+}
+
+/* =====================================================================
+   ไฟล์ตัวอย่าง (สร้างขึ้นในเครื่อง)
+   ===================================================================== */
+async function makeSample() {
+  const para = (t, extra = '') => `<w:p>${extra}<w:r><w:t xml:space="preserve">${escXml(t)}</w:t></w:r></w:p>`;
+  const head = (t) => `<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:bCs/><w:sz w:val="40"/><w:szCs w:val="40"/></w:rPr><w:t>${escXml(t)}</w:t></w:r></w:p>`;
+  const br = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+  const lorem = 'เอกสารฉบับนี้จัดทำขึ้นเพื่อทดลองใช้งานโปรแกรม ข้อความนี้เป็นตัวอย่างสำหรับแสดงการจัดวางเนื้อหาในหน้ากระดาษ ผู้ใช้สามารถเลือกหน้าที่ต้องการใส่ลายน้ำ ใส่เลขหน้า หรือเปลี่ยนแนวกระดาษได้ตามต้องการ โดยข้อความเดิมจะไม่ถูกเปลี่ยนแปลง';
+  let body = '';
+  const titles = ['หน้าปก: รายงานประจำปี', 'บทที่ 1 บทนำ', 'บทที่ 2 วิธีดำเนินงาน', 'ภาคผนวก ก ตารางข้อมูล (เหมาะกับแนวนอน)', 'บทที่ 3 สรุปผล', 'บรรณานุกรม'];
+  titles.forEach((t, i) => {
+    if (i) body += br;
+    body += head(t);
+    if (i === 3) {
+      const cell = (x) => `<w:tc><w:tcPr><w:tcW w:w="1500" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>${escXml(x)}</w:t></w:r></w:p></w:tc>`;
+      const row = (a) => `<w:tr>${a.map(cell).join('')}</w:tr>`;
+      body += `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="single" w:sz="4"/><w:left w:val="single" w:sz="4"/><w:bottom w:val="single" w:sz="4"/><w:right w:val="single" w:sz="4"/><w:insideH w:val="single" w:sz="4"/><w:insideV w:val="single" w:sz="4"/></w:tblBorders></w:tblPr><w:tblGrid>${'<w:gridCol w:w="1500"/>'.repeat(6)}</w:tblGrid>` +
+        row(['ลำดับ', 'รายการ', 'ไตรมาส 1', 'ไตรมาส 2', 'ไตรมาส 3', 'ไตรมาส 4']) +
+        [1, 2, 3, 4, 5].map((k) => row([String(k), 'รายการที่ ' + k, String(100 * k), String(120 * k), String(90 * k), String(140 * k)])).join('') + '</w:tbl>';
+    } else {
+      for (let j = 0; j < (i === 0 ? 2 : 5); j++) body += para(lorem, '<w:pPr><w:ind w:firstLine="720"/><w:jc w:val="thaiDistribute"/></w:pPr>');
+    }
+  });
+  const sect = '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>';
+  const docXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="${W}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${body}${sect}</w:body></w:document>`;
+  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="${W}"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="TH Sarabun New" w:hAnsi="TH Sarabun New" w:eastAsia="TH Sarabun New" w:cs="TH Sarabun New"/><w:sz w:val="32"/><w:szCs w:val="32"/><w:lang w:val="en-US" w:bidi="th-TH"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`;
+  const files = {
+    '[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>`,
+    '_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`,
+    'word/_rels/document.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+    'word/document.xml': docXml,
+    'word/styles.xml': styles
+  };
+  const items = [];
+  for (const [name, t] of Object.entries(files)) items.push(await makeZipItem(name, enc.encode(t)));
+  return writeZip(items).arrayBuffer();
+}
+
+/* =====================================================================
+   ส่วนติดต่อผู้ใช้
+   ===================================================================== */
+const S = {
+  model: null, cur: 0, tab: 'wm', outUrl: null,
+  wm: { enabled: true, pages: new Set(), text: 'ลับ', font: 'TH Sarabun New', auto: true, size: 120, bold: true, italic: false, color: '#9CA3AF', opacity: 45, angle: 315, pos: 'cc' },
+  pn: { enabled: true, pages: new Set(), template: '{n}', mode: 'field', start: 1, digits: 'arabic', font: 'TH Sarabun New', size: 16, bold: false, color: '#000000', pos: 'bc', offset: 12 },
+  or: { sel: new Set(), map: new Map() },
+  meta: { strip: false }
+};
+const DEFAULTS = JSON.parse(JSON.stringify({ wm: { ...S.wm, pages: null }, pn: { ...S.pn, pages: null } }));
+const WM_PRESETS = ['ลับ', 'ลับมาก', 'สำเนา', 'ฉบับร่าง', 'ใช้ภายในเท่านั้น', 'ตัวอย่าง', 'CONFIDENTIAL', 'DRAFT', 'COPY'];
+const PN_PRESETS = [['{n}', '1'], ['- {n} -', '- 1 -'], ['หน้า {n}', 'หน้า 1'], ['หน้า {n} จาก {total}', 'หน้า 1 จาก 10'], ['{n}/{total}', '1/10'], ['Page {n}', 'Page 1'], ['Page {n} of {total}', 'Page 1 of 10']];
+const BASE_FONTS = ['TH Sarabun New', 'TH SarabunPSK', 'TH Niramit AS', 'TH Krub', 'Angsana New', 'AngsanaUPC', 'Cordia New', 'Browallia New', 'Leelawadee UI', 'Tahoma', 'Arial', 'Calibri', 'Cambria', 'Times New Roman'];
+
+function getPath(path) { return path.split('.').reduce((o, k) => o[k], S); }
+function setPath(path, v) { const ks = path.split('.'); const last = ks.pop(); ks.reduce((o, k) => o[k], S)[last] = v; }
+
+/* ---------- ตรวจฟอนต์ในเครื่อง ---------- */
+const fontCache = new Map();
+function fontAvailable(name) {
+  if (fontCache.has(name)) return fontCache.get(name);
+  const test = 'abcdefghijklmnopqrstuvwxyz0123456789กขคงจฉชซญฎฐ่้๊๋ัิีึื';
+  let ok = false;
+  for (const base of ['monospace', 'serif', 'sans-serif']) {
+    mctx.font = `40px ${base}`; const a = mctx.measureText(test).width;
+    mctx.font = `40px "${name}", ${base}`; const b = mctx.measureText(test).width;
+    if (Math.abs(a - b) > 0.5) { ok = true; break; }
+  }
+  fontCache.set(name, ok);
+  return ok;
+}
+
+/* ---------- แนวกระดาษที่ต้องการของแต่ละหน้า ---------- */
+function curOrient(i) { return S.model.sections[S.model.pages[i].sec].orient; }
+function wantOrient(i) { return S.or.map.get(i) || curOrient(i); }
+function pageInfo(i) { return orientedInfo(S.model.sections[S.model.pages[i].sec], wantOrient(i)); }
+function pnNumberFor(i) {
+  const o = S.pn;
+  if (o.mode === 'field') return { n: S.model.pages[i].pageNo, total: S.model.pages[S.model.pages.length - 1].pageNo };
+  const list = [...o.pages].sort((a, b) => a - b);
+  return { n: o.start + list.indexOf(i), total: o.start + list.length - 1 };
+}
+function opts() {
+  return {
+    wm: { ...S.wm, text: cleanText(S.wm.text, 80), font: cleanFont(S.wm.font), color: cleanColor(S.wm.color, '#9CA3AF'), size: clamp(+S.wm.size || 100, 6, 600), angle: ((+S.wm.angle || 0) % 360 + 360) % 360, opacity: clamp(+S.wm.opacity || 50, 5, 100) },
+    pn: { ...S.pn, template: cleanText(S.pn.template, 60) || '{n}', font: cleanFont(S.pn.font), color: cleanColor(S.pn.color, '#000000'), size: clamp(+S.pn.size || 16, 6, 96), start: clamp(Math.round(+S.pn.start || 0), 0, 9999), offset: clamp(+S.pn.offset || 12, 3, 40) },
+    orient: S.or.map, meta: S.meta
+  };
+}
+
+/* ---------- วาดหน้ากระดาษจำลอง ---------- */
+function renderPage(i, maxW, maxH, detail) {
+  const m = S.model, pg = m.pages[i];
+  const info = pageInfo(i), d = dimsOf(info);
+  const sc = Math.min(maxW / d.pw, maxH / d.ph);           // px ต่อ pt
+  const o = opts();
+  const page = h('div', { class: 'page', style: { width: d.pw * sc + 'px', height: d.ph * sc + 'px' } });
+  const L = info.mar.left / 20 * sc, T = info.mar.top / 20 * sc;
+  page.append(h('div', { class: 'marg', style: { left: L + 'px', top: T + 'px', width: d.cw * sc + 'px', height: d.ch * sc + 'px' } }));
+  // ข้อความ (textContent เท่านั้น)
+  const fs = m.baseSize * sc;
+  const txt = h('div', { class: 'txt', style: { left: L + 'px', top: T + 'px', width: d.cw * sc + 'px', height: d.ch * sc + 'px', fontSize: fs + 'px', lineHeight: '1.35', fontFamily: `"${cleanFont(m.baseFont || 'TH Sarabun New')}", "TH Sarabun New", "Sarabun", "Leelawadee UI", Tahoma, sans-serif` } });
+  const lines = detail ? pg.lines : pg.lines.slice(0, 60);
+  for (const ln of lines) {
+    const div = h('div', { class: 'l' });
+    const parts = ln.split('￼');
+    parts.forEach((part, k) => { if (k) div.append(h('span', { class: 'img', text: 'ภาพ' })); if (part) div.append(part.replace(/\t/g, '    ')); });
+    if (!ln) div.append(' ');
+    txt.append(div);
+  }
+  page.append(txt);
+  // ลายน้ำ
+  if (o.wm.enabled && o.wm.pages.has(i) && o.wm.text.trim()) {
+    const g = wmGeometry(o.wm, d.cw, d.ch);
+    const bw = g.w * sc, bh = g.h * sc;
+    const x = L + ({ l: 0, c: (d.cw * sc - bw) / 2, r: d.cw * sc - bw }[o.wm.pos[1]]);
+    const y = T + ({ t: 0, c: (d.ch * sc - bh) / 2, b: d.ch * sc - bh }[o.wm.pos[0]]);
+    page.append(h('div', { class: 'wmk', text: o.wm.text, style: {
+      left: x + 'px', top: y + 'px', width: bw + 'px', height: bh + 'px', fontSize: g.size * sc + 'px', lineHeight: bh + 'px',
+      color: o.wm.color, opacity: String(o.wm.opacity / 100), fontWeight: o.wm.bold ? '700' : '400', fontStyle: o.wm.italic ? 'italic' : 'normal',
+      fontFamily: `"${o.wm.font}", "TH Sarabun New", Tahoma, sans-serif`, transform: `rotate(${o.wm.angle}deg)` } }));
+  }
+  // เลขหน้า
+  if (o.pn.enabled && o.pn.pages.has(i)) {
+    const g = pnGeometry(o.pn, d);
+    const { n, total } = pnNumberFor(i);
+    page.append(h('div', { class: 'pnum', text: pageNumberText(o.pn, n, total), style: {
+      left: L + 'px', top: g.top * sc + 'px', width: d.cw * sc + 'px', height: g.hgt * sc + 'px', lineHeight: g.hgt * sc + 'px',
+      textAlign: { l: 'left', c: 'center', r: 'right' }[o.pn.pos[1]], fontSize: o.pn.size * sc + 'px', color: o.pn.color,
+      fontWeight: o.pn.bold ? '700' : '400', fontFamily: `"${o.pn.font}", "TH Sarabun New", Tahoma, sans-serif` } }));
+  }
+  if (wantOrient(i) !== curOrient(i)) page.append(h('div', { class: 'flag', text: wantOrient(i) === 'landscape' ? 'แนวนอน' : 'แนวตั้ง' }));
+  return page;
+}
+
+/* ---------- การเลือกหน้า ---------- */
+function selSet(kind) { return kind === 'or' ? S.or.sel : S[kind].pages; }
+function quickSelect(kind, q) {
+  const n = S.model.pages.length, set = selSet(kind);
+  set.clear();
+  for (let i = 0; i < n; i++) {
+    if (q === 'all' || (q === 'odd' && i % 2 === 0) || (q === 'even' && i % 2 === 1) || (q === 'notfirst' && i > 0) || (q === 'cur' && i === S.cur)) set.add(i);
+  }
+  if (q === 'landscape-now') for (let i = 0; i < n; i++) if (wantOrient(i) === 'landscape') set.add(i);
+  refresh();
+}
+function buildPageSel(kind) {
+  const box = $(`[data-sel="${kind}"]`);
+  box.textContent = '';
+  const label = { wm: 'ใส่ลายน้ำที่หน้า', pn: 'ใส่เลขหน้าที่หน้า', or: 'หน้าที่เลือก' }[kind];
+  const inp = h('input', { type: 'text', placeholder: 'พิมพ์เลขหน้า เช่น 1-3, 5, 8', 'data-range': kind });
+  const hint = h('div', { class: 'hint', 'data-rangehint': kind });
+  inp.addEventListener('input', () => {
+    const { set, bad } = parsePages(inp.value, S.model.pages.length);
+    const target = selSet(kind); target.clear(); set.forEach((x) => target.add(x));
+    hint.className = bad.length ? 'hint bad' : 'hint';
+    hint.textContent = bad.length ? `ไม่เข้าใจ/เกินจำนวนหน้า: ${bad.join(' ')} (มีทั้งหมด ${S.model.pages.length} หน้า)` : '';
+    refresh(true);
+  });
+  const qs = [['all', 'ทุกหน้า'], ['odd', 'หน้าคี่'], ['even', 'หน้าคู่'], ['notfirst', 'ยกเว้นหน้าแรก'], ['cur', 'เฉพาะหน้านี้'], ['none', 'ล้าง']];
+  box.append(
+    h('div', { class: 'lbl', text: label }), inp, hint,
+    h('div', { class: 'chips' }, qs.map(([q, t]) => h('button', { class: 'chip', text: t, onclick: () => quickSelect(kind, q) }))),
+    h('div', { class: 'selinfo', 'data-selinfo': kind })
+  );
+}
+function syncPageSel(kind, fromTyping) {
+  const set = selSet(kind);
+  const inp = $(`[data-range="${kind}"]`);
+  if (!fromTyping && document.activeElement !== inp) { inp.value = fmtPages(set); $(`[data-rangehint="${kind}"]`).textContent = ''; }
+  const info = $(`[data-selinfo="${kind}"]`);
+  info.textContent = '';
+  if (set.size) info.append('เลือกแล้ว ', h('b', { text: `${set.size} หน้า` }), ' — คลิกช่องติ๊กที่ภาพย่อด้านขวาเพื่อเพิ่ม/ลด');
+  else info.append(h('span', { class: 'hint bad', text: 'ยังไม่ได้เลือกหน้า — กดปุ่มด้านบน พิมพ์เลขหน้า หรือติ๊กที่ภาพย่อ' }));
+}
+
+/* ---------- วาดหน้าจอ ---------- */
+let rafId = 0;
+function refresh(fromTyping) {
+  cancelAnimationFrame(rafId);
+  rafId = requestAnimationFrame(() => render(fromTyping));
+}
+function render(fromTyping) {
+  if (!S.model) return;
+  const m = S.model, n = m.pages.length;
+  S.cur = clamp(S.cur, 0, n - 1);
+  for (const k of ['wm', 'pn', 'or']) syncPageSel(k, fromTyping);
+  // ค่าในฟอร์ม
+  $$('[data-bind]').forEach((el) => {
+    if (el === document.activeElement && el.type !== 'checkbox' && el.type !== 'radio') return;
+    const v = getPath(el.dataset.bind);
+    if (el.type === 'checkbox') el.checked = !!v;
+    else if (el.type === 'radio') el.checked = String(v) === el.value;
+    else el.value = v;
+  });
+  $$('[data-seg]').forEach((g) => { const v = String(getPath(g.dataset.seg)); $$('button', g).forEach((b) => b.classList.toggle('on', b.dataset.v === v)); });
+  $$('[data-grid],[data-pnpos]').forEach((g) => { const v = getPath(g.dataset.grid || g.dataset.pnpos); $$('button', g).forEach((b) => b.classList.toggle('on', b.dataset.v === v)); });
+  $('#wmSize').disabled = S.wm.auto;
+  $('#wmOpLbl').textContent = `${S.wm.opacity}%`;
+  $('#pnOffLbl').textContent = `${S.pn.offset} มม.`;
+  $$('#wmPresets .chip').forEach((c) => c.classList.toggle('on', c.textContent === S.wm.text));
+  const pre = PN_PRESETS.find(([t]) => t === S.pn.template);
+  $('#pnPreset').value = pre ? pre[0] : '__custom';
+  for (const k of ['wm', 'pn']) {
+    const f = cleanFont(S[k].font); const ok = fontAvailable(f); const hint = $(`[data-fonthint="${k}"]`);
+    hint.className = ok ? 'hint okc' : 'hint';
+    hint.textContent = ok ? `✓ เครื่องนี้มีฟอนต์ “${f}”` : `เครื่องนี้ไม่มีฟอนต์ “${f}” ภาพตัวอย่างจะใช้ฟอนต์ใกล้เคียง (ในไฟล์จะระบุฟอนต์นี้ไว้ แสดงถูกต้องในเครื่องที่มีฟอนต์)`;
+  }
+  // ตัวนับบนแท็บ
+  $('#tcWm').textContent = S.wm.enabled && S.wm.pages.size ? `${S.wm.pages.size} หน้า` : 'ปิด';
+  $('#tcPn').textContent = S.pn.enabled && S.pn.pages.size ? `${S.pn.pages.size} หน้า` : 'ปิด';
+  const orChanged = [...Array(n).keys()].filter((i) => wantOrient(i) !== curOrient(i));
+  $('#tcOr').textContent = orChanged.length ? `เปลี่ยน ${orChanged.length}` : 'คงเดิม';
+  // รายการแนวกระดาษ
+  const orList = $('#orList'); orList.textContent = '';
+  if (!orChanged.length) orList.append(h('span', { class: 'hint', text: 'ยังไม่มีการเปลี่ยนแปลง' }));
+  orChanged.forEach((i) => orList.append(h('div', { text: `หน้า ${i + 1}: ${curOrient(i) === 'portrait' ? 'แนวตั้ง' : 'แนวนอน'} → ${wantOrient(i) === 'portrait' ? 'แนวตั้ง' : 'แนวนอน'}` })));
+  const orW = $('#orWarn'); orW.textContent = '';
+  const boundary = orChanged.length ? [...Array(n).keys()].filter((k) => k > 0 && wantOrient(k) !== wantOrient(k - 1) && m.pages[k].sec === m.pages[k - 1].sec) : [];
+  const midP = boundary.filter((k) => m.pages[k].mid && !m.pages[k].explicit).map((k) => k + 1);
+  const inT = boundary.filter((k) => m.pages[k].inTable).map((k) => k + 1);
+  if (midP.length || inT.length) {
+    orW.hidden = false;
+    orW.append(h('b', { text: 'ข้อควรทราบ' }), h('ul', null,
+      midP.length ? h('li', { text: `หน้า ${midP.join(', ')} เริ่มต้นกลางย่อหน้า: โปรแกรมจะแบ่งย่อหน้าที่ขอบหน้าพอดี ตัวอักษรเหมือนเดิมทุกตัว` }) : null,
+      inT.length ? h('li', { text: `หน้า ${inT.join(', ')} เริ่มต้นกลางตาราง: Word ไม่อนุญาตให้เปลี่ยนแนวกระดาษกลางตาราง ตารางทั้งตารางจะย้ายไปอยู่ในแนวใหม่` }) : null));
+  } else orW.hidden = true;
+
+  // ส่วนดูหน้า
+  $('#curInput').value = S.cur + 1; $('#curInput').max = n;
+  $('#curTotal').textContent = `/ ${n}`;
+  const stage = $('#stage'); stage.textContent = '';
+  const sw = Math.max(260, stage.clientWidth - 40);
+  stage.append(renderPage(S.cur, Math.min(sw, 900), 760, true));
+  // ป้ายสถานะของหน้าปัจจุบัน
+  const vc = $('#vchips'); vc.textContent = ''; const o = opts(); const pg = m.pages[S.cur];
+  vc.append(h('span', { class: 'vchip', text: `เลขหน้าในเอกสาร: ${pg.pageNo}` }));
+  vc.append(h('span', { class: 'vchip', text: curOrient(S.cur) === 'portrait' ? 'ต้นฉบับ: แนวตั้ง' : 'ต้นฉบับ: แนวนอน' }));
+  if (o.wm.enabled && o.wm.pages.has(S.cur) && o.wm.text.trim()) vc.append(h('span', { class: 'vchip wm', text: `ลายน้ำ “${o.wm.text}”` }));
+  if (o.pn.enabled && o.pn.pages.has(S.cur)) { const { n: nn, total } = pnNumberFor(S.cur); vc.append(h('span', { class: 'vchip pn', text: `เลขหน้า “${pageNumberText(o.pn, nn, total)}”` })); }
+  if (wantOrient(S.cur) !== curOrient(S.cur)) vc.append(h('span', { class: 'vchip or', text: `เปลี่ยนเป็น${wantOrient(S.cur) === 'landscape' ? 'แนวนอน' : 'แนวตั้ง'} (ข้อความหน้านี้จะจัดบรรทัดใหม่)` }));
+  if (pg.mid && !pg.explicit) vc.append(h('span', { class: 'vchip', text: 'หน้านี้เริ่มต่อจากย่อหน้าของหน้าก่อน' }));
+  if (pg.images) vc.append(h('span', { class: 'vchip', text: `รูป/วัตถุ ${pg.images}` }));
+  // ปุ่มลัดสำหรับหน้านี้
+  const qr = $('#quickRow'); qr.textContent = '';
+  if (S.tab === 'wm' || S.tab === 'pn' || S.tab === 'or') {
+    const set = selSet(S.tab); const has = set.has(S.cur);
+    const name = { wm: 'ลายน้ำ', pn: 'เลขหน้า', or: 'การเลือก' }[S.tab];
+    qr.append(h('button', { class: 'btn small', text: has ? `− เอา${name}ออกจากหน้านี้` : `+ ใส่${name}หน้านี้`, onclick: () => { has ? set.delete(S.cur) : set.add(S.cur); refresh(); } }));
+  }
+  renderThumbs();
+  renderSummary();
+}
+
+function renderThumbs() {
+  const m = S.model, box = $('#thumbs');
+  const kind = ['wm', 'pn', 'or'].includes(S.tab) ? S.tab : null;
+  $('#thumbHint').textContent = kind ? `คลิกภาพ = ดูหน้านั้น • ติ๊ก ☑ = เลือกหน้าสำหรับ “${{ wm: 'ลายน้ำ', pn: 'เลขหน้า', or: 'แนวกระดาษ' }[kind]}”` : 'คลิกภาพเพื่อดูหน้านั้น';
+  const scroll = box.scrollTop;
+  box.textContent = '';
+  const o = opts();
+  m.pages.forEach((pg, i) => {
+    const t = h('div', { class: 'thumb' + (i === S.cur ? ' cur' : ''), title: `หน้า ${i + 1}` });
+    if (kind && selSet(kind).has(i)) t.classList.add('sel' + kind);
+    const cb = kind ? h('input', { type: 'checkbox', title: 'เลือก/ไม่เลือกหน้านี้' }) : null;
+    if (cb) {
+      cb.checked = selSet(kind).has(i);
+      cb.addEventListener('click', (e) => { e.stopPropagation(); const s = selSet(kind); cb.checked ? s.add(i) : s.delete(i); refresh(); });
+    }
+    const bd = h('span', { class: 'bd' },
+      o.wm.enabled && o.wm.pages.has(i) && o.wm.text.trim() ? h('i', { class: 'w', text: 'ลน', title: 'มีลายน้ำ' }) : null,
+      o.pn.enabled && o.pn.pages.has(i) ? h('i', { class: 'p', text: '#', title: 'มีเลขหน้า' }) : null,
+      wantOrient(i) !== curOrient(i) ? h('i', { class: 'o', text: '↻', title: 'เปลี่ยนแนวกระดาษ' }) : null);
+    t.append(h('div', { class: 'tl' }, cb, h('span', { text: `หน้า ${i + 1}` }), h('span', { class: 'sp' }), bd));
+    t.append(renderPage(i, 104, 104, false));
+    t.addEventListener('click', () => { S.cur = i; refresh(); });
+    box.append(t);
+  });
+  box.scrollTop = scroll;
+}
+
+function renderSummary() {
+  const sm = $('#summary'); sm.textContent = '';
+  const o = opts(); const items = [];
+  const posName = { tl: 'บนซ้าย', tc: 'บนกลาง', tr: 'บนขวา', cl: 'กลางซ้าย', cc: 'กึ่งกลาง', cr: 'กลางขวา', bl: 'ล่างซ้าย', bc: 'ล่างกลาง', br: 'ล่างขวา' };
+  if (o.wm.enabled && o.wm.pages.size && o.wm.text.trim()) items.push(`ลายน้ำ “${o.wm.text}” (${o.wm.font}, ${posName[o.wm.pos]}) → หน้า ${fmtPages(o.wm.pages)}`);
+  if (o.pn.enabled && o.pn.pages.size) items.push(`เลขหน้า “${o.pn.template}” (${o.pn.mode === 'field' ? 'เลขหน้าจริง' : 'นับใหม่เริ่ม ' + o.pn.start}, ${o.pn.font} ${o.pn.size}pt, ${posName[o.pn.pos]}) → หน้า ${fmtPages(o.pn.pages)}`);
+  const n = S.model.pages.length;
+  const toL = new Set(), toP = new Set();
+  for (let i = 0; i < n; i++) if (wantOrient(i) !== curOrient(i)) (wantOrient(i) === 'landscape' ? toL : toP).add(i);
+  if (toL.size) items.push(`เปลี่ยนเป็นแนวนอน → หน้า ${fmtPages(toL)}`);
+  if (toP.size) items.push(`เปลี่ยนเป็นแนวตั้ง → หน้า ${fmtPages(toP)}`);
+  if (o.meta.strip) items.push('ลบชื่อผู้สร้าง/ผู้แก้ไข/บริษัท ออกจากข้อมูลไฟล์');
+  if (!items.length) sm.append(h('span', { class: 'hint bad', text: 'ยังไม่มีการเปลี่ยนแปลง — เลือกหน้าในแท็บ ลายน้ำ / เลขหน้า / แนวกระดาษ ก่อน' }));
+  else sm.append(h('ul', { style: { margin: 0, paddingLeft: '18px' } }, items.map((t) => h('li', { text: t }))));
+  $('#buildBtn').disabled = !items.length;
+  const sc = S.model.scan; const who = [sc.creator && `ผู้สร้าง: ${sc.creator}`, sc.lastBy && `แก้ไขล่าสุด: ${sc.lastBy}`, sc.company && `บริษัท: ${sc.company}`].filter(Boolean);
+  $('#metaHint').textContent = who.length ? `ในไฟล์ตอนนี้มี — ${who.join(' • ')}` : 'ไฟล์นี้ไม่มีข้อมูลชื่อผู้สร้าง';
+}
+
+/* ---------- แจ้งเตือนเมื่อเปิดไฟล์ ---------- */
+function showNotices() {
+  const m = S.model, box = $('#notices'); box.textContent = '';
+  const add = (cls, ...c) => box.append(h('div', { class: 'notice ' + cls }, ...c));
+  if (m.lrpb === 0 && m.appPages && m.appPages > m.pages.length) {
+    add('warn', h('b', { text: 'ตำแหน่งหน้าอาจไม่ตรงกับ Word: ' }), `Word บันทึกไว้ว่ามี ${m.appPages} หน้า แต่ไฟล์นี้ไม่มีข้อมูลตำแหน่งตัดหน้า (มักเกิดกับไฟล์ที่สร้างจากโปรแกรมอื่น) โปรแกรมจึงแบ่งหน้าได้เฉพาะจุดที่มีตัวแบ่งหน้า/ตัวแบ่งส่วน (พบ ${m.pages.length} หน้า) — วิธีแก้: เปิดไฟล์ใน Microsoft Word กด Ctrl+S บันทึก 1 ครั้ง แล้วเปิดในโปรแกรมนี้ใหม่`);
+  } else if (m.lrpb === 0 && m.pages.length <= 1) {
+    add('warn', h('b', { text: 'ไม่พบข้อมูลการขึ้นหน้าใหม่: ' }), 'ถ้าเอกสารยาวหลายหน้า กรุณาเปิดไฟล์ใน Microsoft Word แล้วกดบันทึก (Ctrl+S) 1 ครั้ง ก่อนนำมาใช้ เพื่อให้โปรแกรมรู้ตำแหน่งหน้าที่แน่นอน');
+  } else if (m.appPages && m.appPages !== m.pages.length) {
+    add('warn', h('b', { text: 'จำนวนหน้าต่างจากที่ Word บันทึกไว้: ' }), `Word ระบุ ${m.appPages} หน้า โปรแกรมพบ ${m.pages.length} หน้า (ไฟล์อาจถูกแก้ไขหลังบันทึกครั้งล่าสุด) แนะนำให้เปิดใน Word แล้วบันทึกใหม่ 1 ครั้ง`);
+  } else {
+    add('ok', h('b', { text: 'อ่านตำแหน่งหน้าสำเร็จ: ' }), `พบ ${m.pages.length} หน้า ${m.lrpb ? 'ตรงตามตำแหน่งที่ Word บันทึกไว้' : 'จากตัวแบ่งหน้าในเอกสาร'}`);
+  }
+  const sc = m.scan;
+  if (sc.externalImages.length || sc.templates.length || sc.ole.length || sc.other.length) {
+    const hosts = [...new Set([...sc.externalImages, ...sc.templates, ...sc.ole, ...sc.other].map((t) => { try { return new URL(t.replace(/^[a-zA-Z]+: /, '')).host || t; } catch (e) { return t; } }))].slice(0, 5);
+    add('bad', h('b', { text: 'คำเตือนความปลอดภัย: ' }), `ไฟล์นี้มีการโหลดข้อมูลจากภายนอกอัตโนมัติ ${sc.externalImages.length + sc.templates.length + sc.ole.length + sc.other.length} รายการ (เช่น รูปภาพ/เทมเพลตจากอินเทอร์เน็ต) ซึ่งอาจใช้ติดตามว่าใครเปิดไฟล์เมื่อไร ปลายทาง: ${hosts.join(', ')} — โปรแกรมนี้ไม่ได้เชื่อมต่อไปที่ใด แต่ Microsoft Word อาจเชื่อมต่อเมื่อเปิดไฟล์`);
+  }
+  if (sc.macros || sc.activeX) add('bad', h('b', { text: 'คำเตือน: ' }), 'ไฟล์มีโค้ดมาโคร/ActiveX แฝงอยู่ ควรตรวจสอบแหล่งที่มาของไฟล์');
+  if (sc.embeddings) add('info', `ไฟล์มีวัตถุฝังอยู่ ${sc.embeddings} รายการ (เช่น ไฟล์ Excel ที่ฝังไว้) — จะถูกคัดลอกไปไฟล์ใหม่ตามเดิม`);
+  if (m.multiSecPage) add('info', 'เอกสารมีตัวแบ่งส่วนแบบต่อเนื่อง (หลายส่วนในหน้าเดียว) การเปลี่ยนแนวกระดาษจะใช้การตั้งค่าของส่วนที่เริ่มหน้านั้น');
+}
+
+/* ---------- เปิดไฟล์ ---------- */
+function busy(on, text) { $('#busy').hidden = !on; if (text) $('#busyText').textContent = text; }
+async function openBuffer(buf, name) {
+  busy(true, 'กำลังอ่านไฟล์…');
+  $('#startErr').textContent = '';
+  try {
+    const model = await loadDocx(buf, name);
+    clearData(true);
+    S.model = model; S.cur = 0;
+    $('#fName').textContent = name;
+    $('#fMeta').textContent = `${model.pages.length} หน้า • ${fmtBytes(model.size)} • ${model.sections.length} ส่วน (section)`;
+    $('#outName').value = name.replace(/\.(docx|dotx)$/i, '') + '-แก้ไข.docx';
+    const fl = $('#fontList'); fl.textContent = '';
+    for (const f of [...new Set([...BASE_FONTS, ...model.fonts])]) fl.append(h('option', { value: f }));
+    if (model.baseFont && /[ก-๙]|TH |Angsana|Cordia|Browallia|Leelawadee|Tahoma/i.test(model.baseFont)) { S.wm.font = model.baseFont; S.pn.font = model.baseFont; }
+    $('#result').textContent = '';
+    $('#startView').hidden = true; $('#workView').hidden = false;
+    showNotices();
+    refresh();
+  } catch (e) {
+    const msg = e instanceof UserError ? e.message : 'เปิดไฟล์ไม่สำเร็จ: ' + (e && e.message ? e.message : e);
+    $('#startErr').textContent = '';
+    $('#startErr').append(h('div', { class: 'notice bad', text: msg }));
+    if (!$('#workView').hidden) { $('#notices').prepend(h('div', { class: 'notice bad', text: msg })); }
+    console.error(e);
+  } finally { busy(false); }
+}
+async function openFile(file) {
+  if (!file) return;
+  if (!/\.(docx|dotx)$/i.test(file.name)) { $('#startErr').textContent = ''; $('#startErr').append(h('div', { class: 'notice bad', text: 'รองรับเฉพาะไฟล์ .docx (Word 2007 ขึ้นไป) — ถ้าเป็น .doc ให้เปิดใน Word แล้วบันทึกเป็น .docx ก่อน' })); return; }
+  if (file.size > LIMITS.maxFile) { $('#startErr').textContent = ''; $('#startErr').append(h('div', { class: 'notice bad', text: `ไฟล์ใหญ่เกิน ${fmtBytes(LIMITS.maxFile)}` })); return; }
+  await openBuffer(await file.arrayBuffer(), file.name);
+}
+function clearData(keepView) {
+  if (S.outUrl) { URL.revokeObjectURL(S.outUrl); S.outUrl = null; }
+  S.model = null;
+  S.wm.pages = new Set(); S.pn.pages = new Set(); S.or.sel = new Set(); S.or.map = new Map(); S.meta.strip = false;
+  Object.assign(S.wm, { ...DEFAULTS.wm, pages: S.wm.pages }); Object.assign(S.pn, { ...DEFAULTS.pn, pages: S.pn.pages });
+  $('#fileInput').value = '';
+  if (!keepView) {
+    $('#thumbs').textContent = ''; $('#stage').textContent = ''; $('#notices').textContent = ''; $('#result').textContent = '';
+    $('#workView').hidden = true; $('#startView').hidden = false;
+  }
+}
+
+/* ---------- สร้างไฟล์ ---------- */
+async function doBuild() {
+  const res = $('#result'); res.textContent = '';
+  busy(true, 'กำลังสร้างไฟล์และตรวจสอบ…');
+  try {
+    const out = await buildOutput(S.model, opts());
+    if (S.outUrl) URL.revokeObjectURL(S.outUrl);
+    S.outUrl = URL.createObjectURL(out.blob);
+    let name = cleanText($('#outName').value, 120).replace(/[\\/:*?"<>|]/g, '_').trim() || 'เอกสาร-แก้ไข.docx';
+    if (!/\.docx$/i.test(name)) name += '.docx';
+    const a = h('a', { href: S.outUrl, download: name, class: 'btn primary', text: `⬇ ดาวน์โหลดอีกครั้ง (${fmtBytes(out.blob.size)})` });
+    res.append(h('div', { class: 'box ' + (out.ok ? 'ok' : 'bad') },
+      h('b', { text: out.ok ? 'สร้างไฟล์สำเร็จ และผ่านการตรวจสอบ' : 'สร้างไฟล์แล้ว แต่พบปัญหา' }),
+      h('div', { class: 'verify', style: { marginTop: '6px' } }, out.verify.map(([k, t]) => h('div', { class: 'v ' + k, text: t })))),
+      h('div', { class: 'row', style: { marginTop: '8px' } }, a),
+      h('div', { class: 'hint', style: { marginTop: '6px' }, text: 'แนะนำ: เปิดไฟล์ใหม่ใน Word ตรวจดูหน้าที่แก้ไข ก่อนส่งต่อหรือพิมพ์ (ไฟล์ต้นฉบับยังอยู่ครบ)' }));
+    if (out.ok) a.click();
+  } catch (e) {
+    res.append(h('div', { class: 'box bad', text: (e instanceof UserError ? e.message : 'สร้างไฟล์ไม่สำเร็จ: ' + (e && e.message)) }));
+    console.error(e);
+  } finally { busy(false); }
+}
+
+/* ---------- ผูกเหตุการณ์ ---------- */
+function init() {
+  const net = () => { $('#netBadge').textContent = navigator.onLine ? 'เครื่องต่ออินเทอร์เน็ตอยู่ (หน้านี้ถูกล็อกไม่ให้ใช้)' : 'ออฟไลน์อยู่'; };
+  net(); addEventListener('online', net); addEventListener('offline', net);
+
+  const drop = $('#drop');
+  ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, () => drop.classList.remove('over')));
+  drop.addEventListener('drop', (e) => { e.preventDefault(); openFile(e.dataTransfer.files[0]); });
+  addEventListener('dragover', (e) => e.preventDefault());
+  addEventListener('drop', (e) => { e.preventDefault(); if (!$('#workView').hidden && e.dataTransfer.files[0]) openFile(e.dataTransfer.files[0]); });
+  $('#fileInput').addEventListener('change', (e) => openFile(e.target.files[0]));
+  $('#sampleBtn').addEventListener('click', async () => openBuffer(await makeSample(), 'ตัวอย่าง.docx'));
+  $('#changeFileBtn').addEventListener('click', () => $('#fileInput').click());
+  $('#clearBtn').addEventListener('click', () => clearData(false));
+
+  $$('.tab').forEach((t) => t.addEventListener('click', () => {
+    S.tab = t.dataset.tab;
+    $$('.tab').forEach((x) => x.classList.toggle('active', x === t));
+    $$('[data-body]').forEach((b) => { b.hidden = b.dataset.body !== S.tab; });
+    refresh();
+  }));
+  for (const k of ['wm', 'pn', 'or']) buildPageSel(k);
+
+  $$('[data-bind]').forEach((el) => {
+    const ev = el.type === 'checkbox' || el.type === 'radio' || el.type === 'color' ? 'change' : 'input';
+    el.addEventListener(ev, () => {
+      const path = el.dataset.bind;
+      let v;
+      if (el.type === 'checkbox') v = el.checked;
+      else if (el.type === 'radio') { if (!el.checked) return; v = el.value; }
+      else if (el.type === 'number' || el.type === 'range') { v = parseFloat(el.value); if (!Number.isFinite(v)) return; }
+      else v = el.value;
+      setPath(path, v);
+      refresh();
+    });
+    if (el.type === 'color') el.addEventListener('input', () => { setPath(el.dataset.bind, el.value); refresh(); });
+  });
+  $$('[data-seg]').forEach((g) => $$('button', g).forEach((b) => b.addEventListener('click', () => {
+    const cur = getPath(g.dataset.seg);
+    const v = typeof cur === 'boolean' ? b.dataset.v === 'true' : typeof cur === 'number' ? +b.dataset.v : b.dataset.v;
+    setPath(g.dataset.seg, v); refresh();
+  })));
+  const g3 = $('[data-grid="wm.pos"]');
+  [['tl', '↖'], ['tc', '↑'], ['tr', '↗'], ['cl', '←'], ['cc', '●'], ['cr', '→'], ['bl', '↙'], ['bc', '↓'], ['br', '↘']].forEach(([v, t]) =>
+    g3.append(h('button', { 'data-v': v, text: t, title: v, onclick: () => { S.wm.pos = v; refresh(); } })));
+  const pp = $('[data-pnpos="pn.pos"]');
+  [['tl', 'บนซ้าย'], ['tc', 'บนกลาง'], ['tr', 'บนขวา']].forEach(([v, t]) => pp.append(h('button', { 'data-v': v, text: t, onclick: () => { S.pn.pos = v; refresh(); } })));
+  pp.append(h('div', { class: 'mid', text: 'เนื้อหาเอกสาร' }));
+  [['bl', 'ล่างซ้าย'], ['bc', 'ล่างกลาง'], ['br', 'ล่างขวา']].forEach(([v, t]) => pp.append(h('button', { 'data-v': v, text: t, onclick: () => { S.pn.pos = v; refresh(); } })));
+  const wp = $('#wmPresets');
+  WM_PRESETS.forEach((t) => wp.append(h('button', { class: 'chip', text: t, onclick: () => { S.wm.text = t; $('#wmText').value = t; refresh(); } })));
+  const ps = $('#pnPreset');
+  PN_PRESETS.forEach(([v, t]) => ps.append(h('option', { value: v, text: `${t}   (${v})` })));
+  ps.append(h('option', { value: '__custom', text: 'กำหนดเอง…' }));
+  ps.addEventListener('change', () => { if (ps.value !== '__custom') { S.pn.template = ps.value; $('#pnTemplate').value = ps.value; } else $('#pnTemplate').focus(); refresh(); });
+
+  $('#orPortrait').addEventListener('click', () => setOrient('portrait'));
+  $('#orLandscape').addEventListener('click', () => setOrient('landscape'));
+  $('#orReset').addEventListener('click', () => { for (const i of (S.or.sel.size ? S.or.sel : S.or.map.keys())) S.or.map.delete(i); if (!S.or.sel.size) S.or.map.clear(); refresh(); });
+
+  $('#prevBtn').addEventListener('click', () => { S.cur--; refresh(); });
+  $('#nextBtn').addEventListener('click', () => { S.cur++; refresh(); });
+  $('#curInput').addEventListener('change', (e) => { S.cur = (parseInt(e.target.value, 10) || 1) - 1; refresh(); });
+  addEventListener('keydown', (e) => {
+    if (!S.model || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp') { S.cur--; refresh(); }
+    if (e.key === 'ArrowRight' || e.key === 'PageDown') { S.cur++; refresh(); }
+  });
+  addEventListener('resize', () => refresh());
+  $('#buildBtn').addEventListener('click', doBuild);
+}
+function setOrient(o) {
+  if (!S.or.sel.size) { alert('กรุณาเลือกหน้าก่อน (ติ๊กที่ภาพย่อ หรือพิมพ์เลขหน้า)'); return; }
+  for (const i of S.or.sel) { if (curOrient(i) === o) S.or.map.delete(i); else S.or.map.set(i, o); }
+  refresh();
+}
+
+init();
+// สำหรับการทดสอบอัตโนมัติ (ไม่มีผลต่อความปลอดภัย: ทำงานภายในหน้านี้เท่านั้น)
+window.__wordTool = { loadDocx, buildOutput, makeSample, state: S, opts, readZip, inflateEntry };
+})();
+</script>
+</body>
+</html>
