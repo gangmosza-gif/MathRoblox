@@ -720,7 +720,7 @@ function analyze(doc) {
 
   function newPage(start) {
     if (st.cur) flushLine();
-    const pg = { start, sec: st.secIdx, firstPara: null, lines: [], line: '', images: 0, tables: 0, chars: 0 };
+    const pg = { start, sec: st.secIdx, firstPara: null, starts: [], lines: [], line: '', images: 0, tables: 0, chars: 0 };
     st.pages.push(pg); st.cur = pg; st.hasContent = false;
   }
   function flushLine() {
@@ -736,6 +736,7 @@ function analyze(doc) {
     else if (onOff(kid(pPr, 'pageBreakBefore')) && st.hasContent && !row) newPage({ para: p, inTable: false });
     const tentative = st.cur.firstPara ? null : st.cur;   // ย่อหน้านี้ "อาจ" เป็นย่อหน้าแรกของหน้าปัจจุบัน
     if (tentative) tentative.firstPara = p;
+    const startsOn = st.cur; if (startsOn.starts.length < 40) startsOn.starts.push(p);   // ย่อหน้าที่เริ่มในหน้านี้
     let paraHas = false;
     for (const r of runsOf(p)) {
       for (const c of Array.from(r.children)) {
@@ -748,7 +749,8 @@ function analyze(doc) {
             if (!paraHas) {
               // ย่อหน้านี้จริง ๆ แล้วเริ่มที่หน้าถัดไป → ไม่ใช่ย่อหน้าแรกของหน้าเดิม
               if (tentative && tentative.firstPara === p) tentative.firstPara = null;
-              newPage({ para: p, inTable: !!row }); st.cur.firstPara = p;
+              if (startsOn.starts[startsOn.starts.length - 1] === p) startsOn.starts.pop();
+              newPage({ para: p, inTable: !!row }); st.cur.firstPara = p; st.cur.starts.push(p);
             }
             else newPage({ para: p, run: r, node: c, mid: true, inTable: !!row });
             break;
@@ -989,7 +991,7 @@ function makeContinuationPPr(pPr, numbering) {
 }
 
 /** แบ่งย่อหน้า p ณ ตำแหน่ง node (ตัวแบ่งหน้า/จุดตัดหน้า) คืนค่าย่อหน้าส่วนหลัง */
-function splitParagraphAt(p, run, node, removeNode, numbering) {
+function splitParagraphAt(p, run, node, removeNode, numbering, report) {
   let r = run;
   const before = Array.from(r.children).filter((c) => !isW(c, 'rPr'));
   if (before[0] !== node) r = splitRunBefore(r, node);
@@ -1000,9 +1002,24 @@ function splitParagraphAt(p, run, node, removeNode, numbering) {
   }
   while (container !== p) {
     const ln = container.localName;
-    if (ln === 'sdtContent' || ln === 'sdt' || ln === 'fldSimple') {
-      const wrapper = ln === 'sdtContent' ? container.parentNode : container;
-      ref = wrapper; container = wrapper.parentNode; continue;
+    if (ln === 'sdtContent') {
+      // ตัวควบคุมเนื้อหา (content control) ในบรรทัด: แบ่งเป็น 2 ตัวที่ขอบหน้า เพื่อไม่ให้ข้อความหน้าก่อนเลื่อน
+      const sdt = container.parentNode;
+      const first = Array.from(container.childNodes).find((c) => c.nodeType === 1);
+      if (ref === null) { ref = sdt.nextSibling; container = sdt.parentNode; continue; }
+      if (ref === first) { ref = sdt; container = sdt.parentNode; continue; }
+      const clone = sdt.cloneNode(false);
+      for (const c of sdt.children) if (isW(c, 'sdtPr') || isW(c, 'sdtEndPr')) clone.append(c.cloneNode(true));
+      const idEl = kid(kid(clone, 'sdtPr'), 'id');
+      if (idEl) setWa(idEl, 'val', String((crypto.getRandomValues(new Uint32Array(1))[0] & 0x7ffffffe) + 1));
+      const nc = container.cloneNode(false); clone.append(nc);
+      let n = ref; while (n) { const nx = n.nextSibling; nc.append(n); n = nx; }
+      sdt.after(clone);
+      if (report) report.sdtSplits = (report.sdtSplits || 0) + 1;
+      ref = clone; container = clone.parentNode; continue;
+    }
+    if (ln === 'sdt' || ln === 'fldSimple') {
+      ref = container; container = container.parentNode; continue;
     }
     const contentKids = Array.from(container.childNodes).filter((c) => c.nodeType === 1 && !/Pr$/.test(c.localName));
     if (ref === null) { ref = container.nextSibling; container = container.parentNode; continue; }
@@ -1088,7 +1105,7 @@ function insertSectionBreak(doc, page, S, numbering, report, k) {
   const newSect = S.cloneNode(true);
   const chg = kid(newSect, 'sectPrChange'); if (chg) chg.remove();
   if (st.mid && !st.inTable) {
-    const P2 = splitParagraphAt(st.para, st.run, st.node, !!st.explicit, numbering);
+    const P2 = splitParagraphAt(st.para, st.run, st.node, !!st.explicit, numbering, report);
     putSectPr(st.para, newSect);
     if (!st.explicit) report.splits.push(k + 1);
     return { newSect, firstPara: P2 || page.firstPara };
@@ -1265,7 +1282,11 @@ async function buildOutput(model, opts) {
     }
     const nodes = fragment(doc, xml);
     const pg = pages[i];
-    let p = pg.firstPara;
+    // ยึดกับย่อหน้าแรกที่เริ่มในหน้านี้ โดยเลือกย่อหน้าที่ไม่มีรูป/วัตถุก่อน
+    // (ย่อหน้าที่มีรูปในบรรทัด + กล่องข้อความ ทำให้บางโปรแกรมคำนวณความสูงบรรทัดต่างไปเล็กน้อย)
+    const plain = (q) => q && !['drawing', 'pict', 'object'].some((t) => q.getElementsByTagNameNS(W, t).length) && !q.getElementsByTagNameNS('http://schemas.openxmlformats.org/markup-compatibility/2006', 'AlternateContent').length;
+    const cands = [pg.firstPara, ...pg.starts.filter((q) => q !== pg.firstPara && q.parentNode)].filter(Boolean);
+    let p = cands.find((q) => plain(q) && !outermostTable(q)) || cands.find(plain) || pg.firstPara;
     if (p) {
       const pPr = kid(p, 'pPr');
       for (const nd of nodes) p.insertBefore(nd, pPr ? pPr.nextSibling : p.firstChild);
@@ -1342,6 +1363,7 @@ async function buildOutput(model, opts) {
   if (report.pn) verify.push(['ok', `ใส่เลขหน้า ${report.pn} หน้า (กล่องข้อความลอย ไม่ดันข้อความ)`]);
   if (report.orient.length) verify.push(['ok', `เปลี่ยนแนวกระดาษ ${report.orient.length} หน้า (เพิ่มตัวแบ่งส่วน ${report.sectionBreaks} จุด)`]);
   if (report.splits.length) verify.push(['warn', `หน้า ${report.splits.join(', ')} เริ่มกลางย่อหน้า จึงแบ่งย่อหน้านั้นเป็น 2 ส่วนที่ขอบหน้า (ตัวอักษรเหมือนเดิม) บรรทัดสุดท้ายก่อนขึ้นหน้าใหม่อาจไม่เต็มบรรทัดหากจัดชิดขอบสองด้าน`]);
+  if (report.sdtSplits) verify.push(['warn', `มีช่องกรอกข้อมูล (Content Control) ${report.sdtSplits} จุดที่คร่อมขอบหน้า จึงแบ่งเป็น 2 ช่องที่ขอบหน้า (ข้อความเหมือนเดิม) หากเป็นแบบฟอร์มที่ต้องใช้งานช่องนี้ กรุณาตรวจใน Word`]);
   if (report.tableMoves.length) verify.push(['warn', `หน้า ${report.tableMoves.join(', ')} เริ่มกลางตาราง — Word ไม่สามารถเปลี่ยนแนวกระดาษกลางตารางได้ ตารางนั้นทั้งตารางจึงย้ายไปอยู่ในแนวใหม่`]);
   if (report.fallbackAnchor.length) verify.push(['warn', `หน้า ${report.fallbackAnchor.join(', ')} ทั้งหน้าเป็นย่อหน้าเดียวต่อเนื่อง ลายน้ำ/เลขหน้าอาจไปแสดงที่หน้าก่อนหน้า กรุณาตรวจใน Word`]);
   if (report.failedOrient.length) verify.push(['bad', `ไม่สามารถเปลี่ยนแนวกระดาษที่หน้า ${report.failedOrient.join(', ')}`]);
