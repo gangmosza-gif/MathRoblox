@@ -300,6 +300,7 @@ details summary{cursor:pointer;font-weight:600}
         <div class="field">
           <span class="lbl">ตัวเลข</span>
           <div class="seg" data-seg="pn.digits"><button data-v="arabic">1 2 3</button><button data-v="thai">๑ ๒ ๓ (เลขไทย)</button></div>
+          <div class="hint">เลขไทยแบบ “เลขหน้าจริง” แสดงถูกต้องใน Microsoft Word (LibreOffice อาจแสดงเป็น ก ข ค) — ถ้าต้องเปิดในโปรแกรมอื่น เลือก “นับใหม่” จะแสดงเลขไทยได้ทุกโปรแกรม</div>
         </div>
         <div class="field">
           <label>ฟอนต์</label>
@@ -343,6 +344,7 @@ details summary{cursor:pointer;font-weight:600}
         <div class="field"><span class="lbl">สรุปสิ่งที่จะเปลี่ยน</span><div class="box soft" id="summary"></div></div>
         <div class="field">
           <span class="lbl">ความเป็นส่วนตัว</span>
+          <label class="check" id="removeOldRow" hidden><input type="checkbox" data-bind="meta.removeOld"> <span>ลบลายน้ำ/เลขหน้าเดิมที่โปรแกรมนี้เคยใส่ไว้ก่อน แล้วค่อยใส่ใหม่ (กันซ้อนกัน)<br><span class="hint" id="oldHint"></span></span></label>
           <label class="check"><input type="checkbox" data-bind="meta.strip"> <span>ลบชื่อผู้สร้าง/ผู้แก้ไขล่าสุด/บริษัท ออกจากข้อมูลไฟล์ (Metadata)<br><span class="hint" id="metaHint"></span></span></label>
         </div>
         <div class="field">
@@ -676,6 +678,22 @@ function* runsOf(el) {
   }
 }
 
+function isOwnPict(pict) {
+  const sh = pict.getElementsByTagNameNS(NS_V, '*');
+  if (!sh.length) return false;
+  for (const e of sh) if ((e.localName === 'shape' || e.localName === 'shapetype') && !(e.getAttribute('id') || '').startsWith(ID_PREFIX)) return false;
+  return true;
+}
+function removeOwnDecorations(doc) {
+  let n = 0;
+  for (const pict of Array.from(doc.getElementsByTagNameNS(W, 'pict'))) {
+    if (!isOwnPict(pict)) continue;
+    const r = pict.parentNode;
+    if (isW(r, 'r') && !Array.from(r.children).some((c) => !isW(c, 'rPr') && c !== pict)) r.remove(); else pict.remove();
+    if (pict.getElementsByTagNameNS(NS_V, 'shape').length) n++;
+  }
+  return n;
+}
 function sectInfo(s) {
   const pgSz = kid(s, 'pgSz'), pgMar = kid(s, 'pgMar'), pgNum = kid(s, 'pgNumType');
   const w = num(wa(pgSz, 'w'), 12240), hh = num(wa(pgSz, 'h'), 15840);
@@ -765,7 +783,9 @@ function analyze(doc) {
           case 'tab': st.cur.line += '\t'; st.hasContent = true; paraHas = true; break;
           case 'noBreakHyphen': st.cur.line += '-'; st.hasContent = true; paraHas = true; break;
           case 'sym': st.cur.line += '•'; st.hasContent = true; paraHas = true; break;
-          case 'drawing': case 'pict': case 'object':
+          case 'pict': if (isOwnPict(c)) break;   // ลายน้ำ/เลขหน้าที่โปรแกรมนี้เคยใส่ ไม่นับเป็นเนื้อหา
+          // falls through
+          case 'drawing': case 'object':
             st.cur.images++; st.cur.line += '￼'; st.hasContent = true; paraHas = true; break;
         }
       }
@@ -879,6 +899,8 @@ async function loadDocx(buf, fileName) {
   const fontText = partRels.fontTable ? await text(partRels.fontTable) : null;
 
   const an = analyze(doc);
+  let oldDecor = 0;
+  for (const pict of doc.getElementsByTagNameNS(W, 'pict')) if (isOwnPict(pict) && pict.getElementsByTagNameNS(NS_V, 'shape').length) oldDecor++;
 
   // ฟอนต์และขนาดเริ่มต้นของเอกสาร (สำหรับภาพตัวอย่าง)
   let baseSize = 11, baseFont = null;
@@ -941,7 +963,7 @@ async function loadDocx(buf, fileName) {
   if (appText) { const m = /<Company>([^<]*)<\/Company>/.exec(appText); if (m) scan.company = m[1].trim(); }
 
   return {
-    fileName, size: buf.byteLength, entries, docPath, docXmlText, numberingText, appPages, scan, compatMode,
+    fileName, size: buf.byteLength, entries, oldDecor, docPath, docXmlText, numberingText, appPages, scan, compatMode,
     baseSize, baseFont, fonts: [...fonts],
     lrpb: an.lrpb, explicit: an.explicit, multiSecPage: an.multiSecPage,
     sections: an.infos,
@@ -1151,12 +1173,13 @@ function watermarkXml(id, o, dims, pre, withType) {
   const g = wmGeometry(o, dims.cw, dims.ch);
   const v = POS[o.pos[0]], hz = POS[o.pos[1]];
   const style = `font-family:&quot;${escXml(o.font)}&quot;;font-size:1pt${o.bold ? ';font-weight:bold' : ''}${o.italic ? ';font-style:italic' : ''}`;
-  return `<w:r><w:rPr><w:noProof/></w:rPr><w:pict>` + (withType ?
+  // นิยาม shapetype แยกไว้ใน w:pict ของตัวเองก่อนรูปร่างแรก (โปรแกรมบางตัวอ่านนิยามที่อยู่ใน pict เดียวกันไม่ได้)
+  return (withType ? `<w:r><w:rPr><w:noProof/></w:rPr><w:pict>` +
     `<v:shapetype id="${pre}tp" coordsize="21600,21600" o:spt="136" adj="10800" path="m@7,l@8,m@5,21600l@6,21600e">` +
     `<v:formulas><v:f eqn="sum #0 0 10800"/><v:f eqn="prod #0 2 1"/><v:f eqn="sum 21600 0 @1"/><v:f eqn="sum 0 0 @2"/><v:f eqn="sum 21600 0 @3"/><v:f eqn="if @0 @3 0"/><v:f eqn="if @0 21600 @1"/><v:f eqn="if @0 0 @2"/><v:f eqn="if @0 @4 21600"/><v:f eqn="mid @5 @6"/><v:f eqn="mid @8 @5"/><v:f eqn="mid @7 @8"/><v:f eqn="mid @6 @7"/><v:f eqn="sum @6 0 @5"/></v:formulas>` +
     `<v:path textpathok="t" o:connecttype="custom" o:connectlocs="@9,0;@10,10800;@11,21600;@12,10800" o:connectangles="270,180,90,0"/>` +
-    `<v:textpath on="t" fitshape="t"/><v:handles><v:h position="#0,bottomRight" xrange="6629,14971"/></v:handles><o:lock v:ext="edit" text="t" shapetype="t"/></v:shapetype>` : '') +
-    `<v:shape id="${pre}wm${id}" type="#${pre}tp" style="position:absolute;margin-left:0;margin-top:0;width:${g.w.toFixed(2)}pt;height:${g.h.toFixed(2)}pt;rotation:${Math.round(o.angle) % 360};z-index:${-251650000 + id};mso-position-horizontal:${hz};mso-position-horizontal-relative:margin;mso-position-vertical:${v};mso-position-vertical-relative:margin" o:allowincell="f" fillcolor="${o.color}" stroked="f">` +
+    `<v:textpath on="t" fitshape="t"/><v:handles><v:h position="#0,bottomRight" xrange="6629,14971"/></v:handles><o:lock v:ext="edit" text="t" shapetype="t"/></v:shapetype></w:pict></w:r>` : '') +
+    `<w:r><w:rPr><w:noProof/></w:rPr><w:pict><v:shape id="${pre}wm${id}" type="#${pre}tp" style="position:absolute;margin-left:0;margin-top:0;width:${g.w.toFixed(2)}pt;height:${g.h.toFixed(2)}pt;rotation:${Math.round(o.angle) % 360};z-index:${-251650000 + id};mso-position-horizontal:${hz};mso-position-horizontal-relative:margin;mso-position-vertical:${v};mso-position-vertical-relative:margin" o:allowincell="f" fillcolor="${o.color}" stroked="f">` +
     `<v:fill opacity="${(o.opacity / 100).toFixed(2)}"/>` +
     `<v:textpath style="${style}" string="${escXml(o.text)}"/>` +
     `<w10:wrap type="none" anchorx="margin" anchory="margin"/>` +
@@ -1187,9 +1210,9 @@ function pageNumberXml(id, o, n, total, dims, pre, withType) {
     else runs += txt(part);
   }
   const jc = { l: 'left', c: 'center', r: 'right' }[o.pos[1]];
-  return `<w:r><w:rPr><w:noProof/></w:rPr><w:pict>` + (withType ?
-    `<v:shapetype id="${pre}tb" coordsize="21600,21600" o:spt="202" path="m,l,21600r21600,l21600,xe"><v:stroke joinstyle="miter"/><v:path gradientshapeok="t" o:connecttype="rect"/></v:shapetype>` : '') +
-    `<v:shape id="${pre}pn${id}" type="#${pre}tb" style="position:absolute;margin-left:0;margin-top:${g.top.toFixed(2)}pt;width:${g.w.toFixed(2)}pt;height:${g.hgt.toFixed(2)}pt;z-index:${251660000 + id};mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:absolute;mso-position-vertical-relative:page;mso-wrap-style:square;v-text-anchor:middle" o:allowincell="f" filled="f" stroked="f">` +
+  return (withType ? `<w:r><w:rPr><w:noProof/></w:rPr><w:pict>` +
+    `<v:shapetype id="${pre}tb" coordsize="21600,21600" o:spt="202" path="m,l,21600r21600,l21600,xe"><v:stroke joinstyle="miter"/><v:path gradientshapeok="t" o:connecttype="rect"/></v:shapetype></w:pict></w:r>` : '') +
+    `<w:r><w:rPr><w:noProof/></w:rPr><w:pict><v:shape id="${pre}pn${id}" type="#${pre}tb" style="position:absolute;margin-left:0;margin-top:${g.top.toFixed(2)}pt;width:${g.w.toFixed(2)}pt;height:${g.hgt.toFixed(2)}pt;z-index:${251660000 + id};mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:absolute;mso-position-vertical-relative:page;mso-wrap-style:square;v-text-anchor:middle" o:allowincell="f" filled="f" stroked="f">` +
     `<v:textbox inset="0,0,0,0"><w:txbxContent><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:ind w:left="0" w:right="0" w:firstLine="0"/><w:jc w:val="${jc}"/></w:pPr>${runs}</w:p></w:txbxContent></v:textbox>` +
     `<w10:wrap type="none" anchorx="margin" anchory="page"/>` +
     `</v:shape></w:pict></w:r>`;
@@ -1237,6 +1260,7 @@ async function buildOutput(model, opts) {
   if (an.pages.length !== model.pages.length) throw new Error('page map mismatch');
   const pages = an.pages, n = pages.length;
   ensureRootNs(doc);
+  report.removedOld = opts.meta.removeOld ? removeOwnDecorations(doc) : 0;
 
   // ---------- 1) แนวกระดาษ ----------
   const curO = pages.map((p) => an.infos[p.sec].orient);
@@ -1288,8 +1312,8 @@ async function buildOutput(model, opts) {
     const cands = [pg.firstPara, ...pg.starts.filter((q) => q !== pg.firstPara && q.parentNode)].filter(Boolean);
     let p = cands.find((q) => plain(q) && !outermostTable(q)) || cands.find(plain) || pg.firstPara;
     if (p) {
-      const pPr = kid(p, 'pPr');
-      for (const nd of nodes) p.insertBefore(nd, pPr ? pPr.nextSibling : p.firstChild);
+      const pPr = kid(p, 'pPr'); const at = pPr ? pPr.nextSibling : p.firstChild;
+      for (const nd of nodes) p.insertBefore(nd, at);
     } else {
       // หน้านี้ไม่มีย่อหน้าที่ขึ้นต้นในหน้า (ย่อหน้ายาวทั้งหน้า) → ยึดไว้ตรงจุดเริ่มหน้า
       report.fallbackAnchor.push(i + 1);
@@ -1303,8 +1327,8 @@ async function buildOutput(model, opts) {
         } else for (const nd of nodes) r.before(nd);              // จุดตัดหน้าของ Word: วางไว้ก่อนข้อความแรกของหน้า
       } else {
         p = pg.start.para || firstParagraphIn(kid(doc.documentElement, 'body'));
-        const pPr = kid(p, 'pPr');
-        for (const nd of nodes) p.insertBefore(nd, pPr ? pPr.nextSibling : p.firstChild);
+        const pPr = kid(p, 'pPr'); const at = pPr ? pPr.nextSibling : p.firstChild;
+        for (const nd of nodes) p.insertBefore(nd, at);
       }
     }
   }
@@ -1367,6 +1391,7 @@ async function buildOutput(model, opts) {
   if (report.tableMoves.length) verify.push(['warn', `หน้า ${report.tableMoves.join(', ')} เริ่มกลางตาราง — Word ไม่สามารถเปลี่ยนแนวกระดาษกลางตารางได้ ตารางนั้นทั้งตารางจึงย้ายไปอยู่ในแนวใหม่`]);
   if (report.fallbackAnchor.length) verify.push(['warn', `หน้า ${report.fallbackAnchor.join(', ')} ทั้งหน้าเป็นย่อหน้าเดียวต่อเนื่อง ลายน้ำ/เลขหน้าอาจไปแสดงที่หน้าก่อนหน้า กรุณาตรวจใน Word`]);
   if (report.failedOrient.length) verify.push(['bad', `ไม่สามารถเปลี่ยนแนวกระดาษที่หน้า ${report.failedOrient.join(', ')}`]);
+  if (report.removedOld) verify.push(['ok', `ลบลายน้ำ/เลขหน้าเดิมที่โปรแกรมนี้เคยใส่ไว้ ${report.removedOld} รายการ ก่อนใส่ใหม่`]);
   if (metaDone) verify.push(['ok', 'ลบชื่อผู้สร้าง/ผู้แก้ไข/บริษัท ออกจากข้อมูลไฟล์แล้ว']);
   return { blob, verify, report, ok: !verify.some((v) => v[0] === 'bad') };
 }
@@ -1417,7 +1442,7 @@ const S = {
   wm: { enabled: true, pages: new Set(), text: 'ลับ', font: 'TH Sarabun New', auto: true, size: 120, bold: true, italic: false, color: '#9CA3AF', opacity: 45, angle: 315, pos: 'cc' },
   pn: { enabled: true, pages: new Set(), template: '{n}', mode: 'field', start: 1, digits: 'arabic', font: 'TH Sarabun New', size: 16, bold: false, color: '#000000', pos: 'bc', offset: 12 },
   or: { sel: new Set(), map: new Map() },
-  meta: { strip: false }
+  meta: { strip: false, removeOld: false }
 };
 const DEFAULTS = JSON.parse(JSON.stringify({ wm: { ...S.wm, pages: null }, pn: { ...S.pn, pages: null } }));
 const WM_PRESETS = ['ลับ', 'ลับมาก', 'สำเนา', 'ฉบับร่าง', 'ใช้ภายในเท่านั้น', 'ตัวอย่าง', 'CONFIDENTIAL', 'DRAFT', 'COPY'];
@@ -1663,6 +1688,7 @@ function renderSummary() {
   if (toL.size) items.push(`เปลี่ยนเป็นแนวนอน → หน้า ${fmtPages(toL)}`);
   if (toP.size) items.push(`เปลี่ยนเป็นแนวตั้ง → หน้า ${fmtPages(toP)}`);
   if (o.meta.strip) items.push('ลบชื่อผู้สร้าง/ผู้แก้ไข/บริษัท ออกจากข้อมูลไฟล์');
+  if (o.meta.removeOld && S.model.oldDecor) items.push(`ลบลายน้ำ/เลขหน้าเดิมของโปรแกรมนี้ ${S.model.oldDecor} รายการ`);
   if (!items.length) sm.append(h('span', { class: 'hint bad', text: 'ยังไม่มีการเปลี่ยนแปลง — เลือกหน้าในแท็บ ลายน้ำ / เลขหน้า / แนวกระดาษ ก่อน' }));
   else sm.append(h('ul', { style: { margin: 0, paddingLeft: '18px' } }, items.map((t) => h('li', { text: t }))));
   $('#buildBtn').disabled = !items.length;
@@ -1690,6 +1716,7 @@ function showNotices() {
   }
   if (sc.macros || sc.activeX) add('bad', h('b', { text: 'คำเตือน: ' }), 'ไฟล์มีโค้ดมาโคร/ActiveX แฝงอยู่ ควรตรวจสอบแหล่งที่มาของไฟล์');
   if (sc.labels && sc.labels.length) add('info', h('b', { text: `ไฟล์มีป้ายกำกับความลับ: ${sc.labels.join(', ')} ` }), '— โปรแกรมจะคงป้ายนี้ไว้ในไฟล์ใหม่ทุกประการ (ไม่ลบ ไม่แก้) เพื่อให้เป็นไปตามนโยบายขององค์กร');
+  if (m.oldDecor) add('info', h('b', { text: 'ไฟล์นี้เคยผ่านโปรแกรมนี้มาแล้ว: ' }), `มีลายน้ำ/เลขหน้าเดิม ${m.oldDecor} รายการ — ค่าเริ่มต้นจะลบของเดิมก่อนใส่ใหม่ (เปลี่ยนได้ที่แท็บ “บันทึก”)`);
   if (sc.embeddings) add('info', `ไฟล์มีวัตถุฝังอยู่ ${sc.embeddings} รายการ (เช่น ไฟล์ Excel ที่ฝังไว้) — จะถูกคัดลอกไปไฟล์ใหม่ตามเดิม`);
   if (m.multiSecPage) add('info', 'เอกสารมีตัวแบ่งส่วนแบบต่อเนื่อง (หลายส่วนในหน้าเดียว) การเปลี่ยนแนวกระดาษจะใช้การตั้งค่าของส่วนที่เริ่มหน้านั้น');
 }
@@ -1710,6 +1737,9 @@ async function openBuffer(buf, name) {
     for (const f of [...new Set([...BASE_FONTS, ...model.fonts])]) fl.append(h('option', { value: f }));
     if (model.baseFont && /[ก-๙]|TH |Angsana|Cordia|Browallia|Leelawadee|Tahoma/i.test(model.baseFont)) { S.wm.font = model.baseFont; S.pn.font = model.baseFont; }
     $('#result').textContent = '';
+    S.meta.removeOld = model.oldDecor > 0;
+    $('#removeOldRow').hidden = !model.oldDecor;
+    $('#oldHint').textContent = model.oldDecor ? `ไฟล์นี้มีของเดิม ${model.oldDecor} รายการ` : '';
     $('#startView').hidden = true; $('#workView').hidden = false;
     showNotices();
     refresh();
@@ -1730,7 +1760,7 @@ async function openFile(file) {
 function clearData(keepView) {
   if (S.outUrl) { URL.revokeObjectURL(S.outUrl); S.outUrl = null; }
   S.model = null;
-  S.wm.pages = new Set(); S.pn.pages = new Set(); S.or.sel = new Set(); S.or.map = new Map(); S.meta.strip = false;
+  S.wm.pages = new Set(); S.pn.pages = new Set(); S.or.sel = new Set(); S.or.map = new Map(); S.meta.strip = false; S.meta.removeOld = false;
   Object.assign(S.wm, { ...DEFAULTS.wm, pages: S.wm.pages }); Object.assign(S.pn, { ...DEFAULTS.pn, pages: S.pn.pages });
   $('#fileInput').value = '';
   if (!keepView) {
