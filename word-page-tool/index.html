@@ -495,7 +495,7 @@ function crc32(u8) {
 function readZip(buf) {
   const u8 = new Uint8Array(buf), dv = new DataView(buf);
   if (u8.length >= 4 && u8[0] === 0xD0 && u8[1] === 0xCF && u8[2] === 0x11 && u8[3] === 0xE0)
-    throw uerr('ไฟล์นี้เป็น Word รุ่นเก่า (.doc) หรือถูกตั้งรหัสผ่านไว้ — กรุณาเปิดใน Word แล้ว “บันทึกเป็น .docx” (และเอารหัสผ่านออกชั่วคราว) ก่อนใช้งาน');
+    throw uerr('ไฟล์นี้ถูกเข้ารหัส (ตั้งรหัสผ่าน หรือมีป้ายความลับแบบเข้ารหัส/IRM ขององค์กร) หรือเป็น Word รุ่นเก่า (.doc) — โปรแกรมนี้จะไม่พยายามถอดรหัสหรือหลบการป้องกันของไฟล์ กรุณาใช้ฟีเจอร์ใน Microsoft Word แทน หรือติดต่อฝ่าย IT');
   if (u8.length < 22 || u8[0] !== 0x50 || u8[1] !== 0x4B)
     throw uerr('ไฟล์นี้ไม่ใช่ไฟล์ .docx ที่ถูกต้อง');
   let eocd = -1;
@@ -918,6 +918,15 @@ async function loadDocx(buf, fileName) {
       }
     }
   }
+  // ป้ายกำกับความลับ (Microsoft Purview / AIP Sensitivity Label) — ต้องคงไว้ให้ระบบ DLP ขององค์กรตรวจได้เหมือนเดิม
+  scan.labels = []; scan.labelParts = [];
+  const custom = await text('docProps/custom.xml');
+  if (custom) {
+    const re = /name="MSIP_Label_[0-9a-fA-F-]+_Name"[^>]*>\s*<vt:lpwstr>([^<]*)<\/vt:lpwstr>/g; let mm;
+    while ((mm = re.exec(custom))) scan.labels.push(mm[1].slice(0, 80));
+    if (/MSIP_Label_/.test(custom)) scan.labelParts.push('docProps/custom.xml');
+  }
+  for (const e of entries) if (/^docMetadata\/LabelInfo\.xml$/i.test(e.name)) { scan.labelParts.push(e.name); if (!scan.labels.length) scan.labels.push('(มีป้ายกำกับ)'); }
   const core = await text('docProps/core.xml');
   if (core) {
     const g = (tag) => { const m = new RegExp(`<${tag}[^>]*>([^<]*)</${tag}>`).exec(core); return m ? m[1].trim() : ''; };
@@ -1303,6 +1312,11 @@ async function buildOutput(model, opts) {
     const after = outDoc ? bodyText(outDoc) : null;
     if (after === before) verify.push(['ok', `ข้อความในเอกสารครบถ้วนเหมือนต้นฉบับทุกตัวอักษร (${before.length.toLocaleString('th-TH')} ตัวอักษร)`]);
     else verify.push(['bad', 'ข้อความในเอกสารไม่ตรงกับต้นฉบับ — ไม่แนะนำให้ใช้ไฟล์นี้']);
+    const lp = model.scan.labelParts || [];
+    if (lp.length) {
+      const same = lp.every((nm) => { const a = model.entries.find((e) => e.name === nm), b = reread && reread.find((e) => e.name === nm); return a && b && a.crc === b.crc && a.usize === b.usize; });
+      verify.push(same ? ['ok', `ป้ายกำกับความลับ “${model.scan.labels.join(', ')}” คงอยู่ครบทุกไบต์ (ระบบ DLP ขององค์กรยังจดจำไฟล์นี้ได้เหมือนเดิม)`] : ['bad', 'ป้ายกำกับความลับไม่ตรงกับต้นฉบับ — ห้ามใช้ไฟล์นี้']);
+    }
     const unchanged = model.entries.length - replace.size;
     verify.push(['ok', `ส่วนอื่นของไฟล์ (รูปภาพ ส่วนหัว/ท้าย สไตล์ ฯลฯ) ${unchanged} ส่วน คัดลอกแบบไบต์ต่อไบต์ ไม่ถูกแตะต้อง`]);
   } catch (e) { verify.push(['bad', 'ตรวจข้อความไม่สำเร็จ: ' + e.message]); }
@@ -1635,6 +1649,7 @@ function showNotices() {
     add('bad', h('b', { text: 'คำเตือนความปลอดภัย: ' }), `ไฟล์นี้มีการโหลดข้อมูลจากภายนอกอัตโนมัติ ${sc.externalImages.length + sc.templates.length + sc.ole.length + sc.other.length} รายการ (เช่น รูปภาพ/เทมเพลตจากอินเทอร์เน็ต) ซึ่งอาจใช้ติดตามว่าใครเปิดไฟล์เมื่อไร ปลายทาง: ${hosts.join(', ')} — โปรแกรมนี้ไม่ได้เชื่อมต่อไปที่ใด แต่ Microsoft Word อาจเชื่อมต่อเมื่อเปิดไฟล์`);
   }
   if (sc.macros || sc.activeX) add('bad', h('b', { text: 'คำเตือน: ' }), 'ไฟล์มีโค้ดมาโคร/ActiveX แฝงอยู่ ควรตรวจสอบแหล่งที่มาของไฟล์');
+  if (sc.labels && sc.labels.length) add('info', h('b', { text: `ไฟล์มีป้ายกำกับความลับ: ${sc.labels.join(', ')} ` }), '— โปรแกรมจะคงป้ายนี้ไว้ในไฟล์ใหม่ทุกประการ (ไม่ลบ ไม่แก้) เพื่อให้เป็นไปตามนโยบายขององค์กร');
   if (sc.embeddings) add('info', `ไฟล์มีวัตถุฝังอยู่ ${sc.embeddings} รายการ (เช่น ไฟล์ Excel ที่ฝังไว้) — จะถูกคัดลอกไปไฟล์ใหม่ตามเดิม`);
   if (m.multiSecPage) add('info', 'เอกสารมีตัวแบ่งส่วนแบบต่อเนื่อง (หลายส่วนในหน้าเดียว) การเปลี่ยนแนวกระดาษจะใช้การตั้งค่าของส่วนที่เริ่มหน้านั้น');
 }
