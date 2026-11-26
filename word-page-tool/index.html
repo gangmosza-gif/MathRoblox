@@ -970,7 +970,8 @@ async function loadDocx(buf, fileName) {
     pages: an.pages.map((p) => ({
       sec: p.sec, pageNo: p.pageNo, lines: p.lines, images: p.images, tables: p.tables, chars: p.chars,
       mid: !!p.start.mid && !p.start.inTable, inTable: !!p.start.inTable, hasFirstPara: !!p.firstPara,
-      bySection: !!p.start.bySection || !!p.start.first, explicit: !!p.start.explicit
+      bySection: !!p.start.bySection || !!p.start.first, explicit: !!p.start.explicit,
+      tableOnly: p.starts.length ? p.starts.every((q) => outermostTable(q)) : !!p.start.inTable
     }))
   };
 }
@@ -1122,7 +1123,7 @@ function applyOrient(S, want) {
   setWa(sz, 'w', w); setWa(sz, 'h', hh);
 }
 
-function insertSectionBreak(doc, page, S, numbering, report, k) {
+function insertSectionBreak(doc, page, S, numbering, report, k, tableToPrev) {
   const st = page.start;
   const newSect = S.cloneNode(true);
   const chg = kid(newSect, 'sectPrChange'); if (chg) chg.remove();
@@ -1137,7 +1138,17 @@ function insertSectionBreak(doc, page, S, numbering, report, k) {
   if (st.inTable || outermostTable(target)) {
     const tbl = outermostTable(target);
     if (tbl) {
-      if (firstParagraphIn(tbl) !== target) report.tableMoves.push(k + 1);
+      if (firstParagraphIn(tbl) !== target) {
+        if (tableToPrev) {
+          // ตารางคร่อมขอบหน้า และหน้าที่ตารางเริ่มต้นเป็นแนวนอน → ให้ทั้งตารางอยู่แนวนอน (ตัดส่วนหลังตาราง)
+          const sp = sectionParagraph(doc, newSect);
+          tbl.after(sp);
+          report.tableMoves.push({ page: k + 1, dir: 'prev' });
+          // หน้านี้ยังเป็นส่วนต่อของตาราง → ยึดลายน้ำ/เลขหน้ากับแถวตารางในหน้านี้ (เนื้อหาหลังตารางย้ายไปหน้าใหม่)
+          return { newSect, firstPara: page.firstPara, keepStarts: (q) => tbl.contains(q) };
+        }
+        report.tableMoves.push({ page: k + 1, dir: 'next' });
+      }
       target = tbl;
     }
   }
@@ -1252,7 +1263,7 @@ function bodyText(doc) {
    สร้างไฟล์ผลลัพธ์
    ===================================================================== */
 async function buildOutput(model, opts) {
-  const report = { splits: [], tableMoves: [], fallbackAnchor: [], sectionBreaks: 0, wm: 0, pn: 0, orient: [], failedOrient: [] };
+  const report = { splits: [], tableMoves: [], fallbackAnchor: [], tableAnchor: [], sectionBreaks: 0, wm: 0, pn: 0, orient: [], failedOrient: [] };
   const doc = parseXml(model.docXmlText, 'document.xml');
   const numbering = buildNumbering(model.numberingText ? parseXml(model.numberingText, 'numbering.xml') : null);
   numbering.compatMode = model.compatMode;
@@ -1271,12 +1282,14 @@ async function buildOutput(model, opts) {
     for (let k = 1; k < n; k++) {
       if (want[k] === want[k - 1] || gov[k] !== gov[k - 1]) continue;
       const S = gov[k];
-      const res = insertSectionBreak(doc, pages[k], S, numbering, report, k);
+      // ตารางที่คร่อมขอบหน้า: ให้ไปอยู่ฝั่งที่เป็นแนวนอน (มักหมุนหน้าเพื่อให้ตารางกว้างพอ)
+      const res = insertSectionBreak(doc, pages[k], S, numbering, report, k, want[k - 1] === 'landscape' && want[k] !== 'landscape');
       if (!res) { report.failedOrient.push(k + 1); want[k] = want[k - 1]; continue; }
       report.sectionBreaks++;
       for (let j = k - 1; j >= 0 && gov[j] === S; j--) gov[j] = res.newSect;
       if (!fixed.has(S)) { fixContinuationSect(S); fixed.add(S); }
       if (res.firstPara) pages[k].firstPara = res.firstPara;
+      if (res.keepStarts) pages[k].starts = pages[k].starts.filter(res.keepStarts);
     }
     for (let i = 0; i < n; i++) {
       applyOrient(gov[i], want[i]);
@@ -1311,6 +1324,7 @@ async function buildOutput(model, opts) {
     const plain = (q) => q && !['drawing', 'pict', 'object'].some((t) => q.getElementsByTagNameNS(W, t).length) && !q.getElementsByTagNameNS('http://schemas.openxmlformats.org/markup-compatibility/2006', 'AlternateContent').length;
     const cands = [pg.firstPara, ...pg.starts.filter((q) => q !== pg.firstPara && q.parentNode)].filter(Boolean);
     let p = cands.find((q) => plain(q) && !outermostTable(q)) || cands.find(plain) || pg.firstPara;
+    if (p && outermostTable(p)) report.tableAnchor.push(i + 1);
     if (p) {
       const pPr = kid(p, 'pPr'); const at = pPr ? pPr.nextSibling : p.firstChild;
       for (const nd of nodes) p.insertBefore(nd, at);
@@ -1388,7 +1402,8 @@ async function buildOutput(model, opts) {
   if (report.orient.length) verify.push(['ok', `เปลี่ยนแนวกระดาษ ${report.orient.length} หน้า (เพิ่มตัวแบ่งส่วน ${report.sectionBreaks} จุด)`]);
   if (report.splits.length) verify.push(['warn', `หน้า ${report.splits.join(', ')} เริ่มกลางย่อหน้า จึงแบ่งย่อหน้านั้นเป็น 2 ส่วนที่ขอบหน้า (ตัวอักษรเหมือนเดิม) บรรทัดสุดท้ายก่อนขึ้นหน้าใหม่อาจไม่เต็มบรรทัดหากจัดชิดขอบสองด้าน`]);
   if (report.sdtSplits) verify.push(['warn', `มีช่องกรอกข้อมูล (Content Control) ${report.sdtSplits} จุดที่คร่อมขอบหน้า จึงแบ่งเป็น 2 ช่องที่ขอบหน้า (ข้อความเหมือนเดิม) หากเป็นแบบฟอร์มที่ต้องใช้งานช่องนี้ กรุณาตรวจใน Word`]);
-  if (report.tableMoves.length) verify.push(['warn', `หน้า ${report.tableMoves.join(', ')} เริ่มกลางตาราง — Word ไม่สามารถเปลี่ยนแนวกระดาษกลางตารางได้ ตารางนั้นทั้งตารางจึงย้ายไปอยู่ในแนวใหม่`]);
+  for (const t of report.tableMoves) verify.push(['warn', `หน้า ${t.page} เริ่มกลางตาราง — Word เปลี่ยนแนวกระดาษกลางตารางไม่ได้ จึงให้ทั้งตารางอยู่${t.dir === 'prev' ? 'ในแนวเดียวกับหน้าที่ตารางเริ่มต้น (แนวนอน) และเนื้อหาหลังตารางขึ้นหน้าใหม่' : 'ในแนวกระดาษของหน้าถัดไป'} หน้าถัดจากนั้นอาจจัดหน้าใหม่`]);
+  if (report.tableAnchor.length) verify.push(['warn', `หน้า ${report.tableAnchor.join(', ')} ทั้งหน้าเป็นตาราง ลายน้ำ/เลขหน้าจึงยึดไว้ในตาราง (ตั้งค่าให้อิงตำแหน่งหน้ากระดาษ) — Microsoft Word รองรับ แต่ LibreOffice อาจไม่แสดง กรุณาตรวจใน Word`]);
   if (report.fallbackAnchor.length) verify.push(['warn', `หน้า ${report.fallbackAnchor.join(', ')} ทั้งหน้าเป็นย่อหน้าเดียวต่อเนื่อง ลายน้ำ/เลขหน้าอาจไปแสดงที่หน้าก่อนหน้า กรุณาตรวจใน Word`]);
   if (report.failedOrient.length) verify.push(['bad', `ไม่สามารถเปลี่ยนแนวกระดาษที่หน้า ${report.failedOrient.join(', ')}`]);
   if (report.removedOld) verify.push(['ok', `ลบลายน้ำ/เลขหน้าเดิมที่โปรแกรมนี้เคยใส่ไว้ ${report.removedOld} รายการ ก่อนใส่ใหม่`]);
@@ -1620,7 +1635,7 @@ function render(fromTyping) {
     orW.hidden = false;
     orW.append(h('b', { text: 'ข้อควรทราบ' }), h('ul', null,
       midP.length ? h('li', { text: `หน้า ${midP.join(', ')} เริ่มต้นกลางย่อหน้า: โปรแกรมจะแบ่งย่อหน้าที่ขอบหน้าพอดี ตัวอักษรเหมือนเดิมทุกตัว` }) : null,
-      inT.length ? h('li', { text: `หน้า ${inT.join(', ')} เริ่มต้นกลางตาราง: Word ไม่อนุญาตให้เปลี่ยนแนวกระดาษกลางตาราง ตารางทั้งตารางจะย้ายไปอยู่ในแนวใหม่` }) : null));
+      inT.length ? h('li', { text: `หน้า ${inT.join(', ')} เริ่มต้นกลางตาราง: Word ไม่อนุญาตให้เปลี่ยนแนวกระดาษกลางตาราง ทั้งตารางจะอยู่ฝั่งที่เป็นแนวนอน และหน้าหลังจากนั้นอาจจัดหน้าใหม่` }) : null));
   } else orW.hidden = true;
 
   // ส่วนดูหน้า
@@ -1637,6 +1652,7 @@ function render(fromTyping) {
   if (o.pn.enabled && o.pn.pages.has(S.cur)) { const { n: nn, total } = pnNumberFor(S.cur); vc.append(h('span', { class: 'vchip pn', text: `เลขหน้า “${pageNumberText(o.pn, nn, total)}”` })); }
   if (wantOrient(S.cur) !== curOrient(S.cur)) vc.append(h('span', { class: 'vchip or', text: `เปลี่ยนเป็น${wantOrient(S.cur) === 'landscape' ? 'แนวนอน' : 'แนวตั้ง'} (ข้อความหน้านี้จะจัดบรรทัดใหม่)` }));
   if (pg.mid && !pg.explicit) vc.append(h('span', { class: 'vchip', text: 'หน้านี้เริ่มต่อจากย่อหน้าของหน้าก่อน' }));
+  if (pg.tableOnly) vc.append(h('span', { class: 'vchip warn', text: 'หน้านี้เป็นตารางทั้งหน้า: ลายน้ำ/เลขหน้าแสดงใน Word แต่บางโปรแกรมอาจไม่แสดง' }));
   if (pg.images) vc.append(h('span', { class: 'vchip', text: `รูป/วัตถุ ${pg.images}` }));
   // ปุ่มลัดสำหรับหน้านี้
   const qr = $('#quickRow'); qr.textContent = '';
